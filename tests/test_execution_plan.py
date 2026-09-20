@@ -21,10 +21,10 @@ from hiwaga_mcp.errors import (
 )
 from hiwaga_mcp.models.verification import ProofClass
 from hiwaga_mcp.models.verification_registry import ExecutableStrategy
+from hiwaga_mcp.services.runtime_state import repository_state_key, resolve_state_root
 from hiwaga_mcp.services.verification import (
     FIXED_ENVIRONMENT,
     INHERITED_ENVIRONMENT,
-    RUNS_DIRECTORY,
     build_environment,
     build_execution_plan,
     new_run_id,
@@ -32,7 +32,13 @@ from hiwaga_mcp.services.verification import (
 )
 from hiwaga_mcp.services.verification_registry import parse_verifier_registry, select_verifier
 
-from .conftest import fixture_registry, make_hiwaga_repo, registry_text
+from .conftest import (
+    fixture_registry,
+    install_fixture_verifiers,
+    install_repo_python,
+    make_hiwaga_repo,
+    registry_text,
+)
 
 
 def plan_for(root: Path, verifier: str = "structural", mode: str | None = None, registry: Any = None) -> Any:
@@ -180,11 +186,34 @@ def test_caller_cannot_claim_a_different_proof_class(verify_repo: Path) -> None:
 # --- run directory -----------------------------------------------------------
 
 
-def test_run_directory_is_inside_the_ignored_scratch_tree(verify_repo: Path) -> None:
+def test_run_directory_is_absolute_and_outside_the_repository(verify_repo: Path) -> None:
     plan = plan_for(verify_repo)
-    relative = plan.run_directory.relative_to(verify_repo.resolve())
-    assert str(relative).startswith(RUNS_DIRECTORY)
-    assert relative.parent == Path(RUNS_DIRECTORY)
+    assert plan.run_directory.is_absolute()
+    assert verify_repo.resolve() not in plan.run_directory.parents
+    assert plan.run_directory != verify_repo.resolve()
+
+
+def test_run_directory_matches_the_state_root_repository_key_and_run_id_shape(verify_repo: Path) -> None:
+    plan = plan_for(verify_repo)
+    state_root = resolve_state_root()
+    key = repository_state_key(verify_repo)
+    assert plan.run_directory == state_root / "repositories" / key / "runs" / plan.run_id
+
+
+def test_two_repositories_get_two_different_run_namespaces(tmp_path: Path) -> None:
+    first = make_hiwaga_repo(tmp_path / "first")
+    second = make_hiwaga_repo(tmp_path / "second")
+    for root in (first, second):
+        install_repo_python(root)
+        install_fixture_verifiers(root)
+
+    first_plan, second_plan = plan_for(first), plan_for(second)
+    assert repository_state_key(first) != repository_state_key(second)
+    # Each run directory sits under its own `repositories/<key>` namespace, so
+    # neither run directory can be an ancestor of the other.
+    assert first_plan.run_directory != second_plan.run_directory
+    assert first_plan.run_directory not in second_plan.run_directory.parents
+    assert second_plan.run_directory not in first_plan.run_directory.parents
 
 
 def test_each_plan_gets_its_own_run_directory(verify_repo: Path) -> None:

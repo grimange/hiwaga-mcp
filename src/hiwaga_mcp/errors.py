@@ -32,6 +32,7 @@ class ReasonCode(str, Enum):
     VERIFIER_REGISTRY_INVALID = "HIWAGA_VERIFIER_REGISTRY_INVALID"
     UNKNOWN_VERIFIER = "HIWAGA_UNKNOWN_VERIFIER"
     UNSUPPORTED_VERIFY_MODE = "HIWAGA_UNSUPPORTED_VERIFY_MODE"
+    RUNTIME_STATE_UNAVAILABLE = "HIWAGA_RUNTIME_STATE_UNAVAILABLE"
 
 
 class HiwagaError(Exception):
@@ -113,6 +114,17 @@ class UnsupportedVerifyModeError(HiwagaError):
     code = ReasonCode.UNSUPPORTED_VERIFY_MODE
 
 
+class RuntimeStateError(HiwagaError):
+    """The external, control-plane-owned local state root cannot be established.
+
+    This is not a HIWAGA repository problem: it means neither `XDG_STATE_HOME`
+    nor `HOME` names a usable absolute directory for this server's own runtime
+    state. There is no fallback into the inspected repository.
+    """
+
+    code = ReasonCode.RUNTIME_STATE_UNAVAILABLE
+
+
 __all__ = [
     "AssetAuthorityError",
     "ConfigurationError",
@@ -121,6 +133,7 @@ __all__ = [
     "ProjectStateUnavailableError",
     "ReasonCode",
     "RepositoryIdentityError",
+    "RuntimeStateError",
     "TargetOutsideRepositoryError",
     "UnknownVerifierError",
     "UnsupportedVerifyModeError",

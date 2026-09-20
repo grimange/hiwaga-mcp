@@ -2,9 +2,6 @@
 .venv
 .idea/
 
-# hiwaga-mcp runtime scratch state (runs/, logs/); never tracked evidence.
-.hiwaga-mcp/
-
 # Python build and test artifacts.
 __pycache__/
 *.py[cod]

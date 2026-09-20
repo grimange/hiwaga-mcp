@@ -247,9 +247,11 @@ def test_extra_arguments_are_ignored_and_never_reach_execution(verify_repo: Path
     assert result.is_error is False
     payload = result.structured_content
     assert payload["status"] == "PASS"
-    assert payload["run_directory"].startswith(".hiwaga-mcp/runs/")
-    # The registry's script ran, not the smuggled command, and the run stayed
-    # inside the repository rather than the supplied /etc.
+    # The registry's script ran, not the smuggled command, and the run landed in
+    # this server's own external state, not the supplied /etc.
+    assert Path(payload["run_directory"]).is_absolute()
+    assert verify_repo.resolve() not in Path(payload["run_directory"]).parents
+    assert not payload["run_directory"].startswith("/etc")
     assert "structural check ok" in payload["stdout_tail"]
 
 

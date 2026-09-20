@@ -154,14 +154,16 @@ def test_packaged_registry_is_the_one_the_entrypoint_loads(tmp_path: Path) -> No
     assert result.structured_content["proof_class"] == "HEADLESS"
 
 
-def test_run_artifacts_land_in_the_scratch_tree_over_stdio(tmp_path: Path) -> None:
+def test_run_artifacts_land_outside_the_repository_over_stdio(tmp_path: Path) -> None:
     root = packaged_repo(tmp_path, 'print("PASS")\nraise SystemExit(0)\n')
     payload = over_stdio(entrypoint_parameters(root), {"verifier": "asset_authority"}).structured_content
 
-    run_directory = root / payload["run_directory"]
+    run_directory = Path(payload["run_directory"])
+    assert run_directory.is_absolute()
     assert run_directory.is_dir()
-    assert (root / payload["stdout_log"]).is_file()
-    assert payload["run_directory"].startswith(".hiwaga-mcp/runs/")
+    assert Path(payload["stdout_log"]).is_file()
+    assert root.resolve() not in run_directory.parents
+    assert not (root / ".hiwaga-mcp").exists()
 
 
 # --- the fixture registry, for a fast deadline -------------------------------
@@ -222,7 +224,7 @@ def test_descendants_do_not_survive_a_stdio_timeout(tmp_path: Path) -> None:
     payload = over_stdio(launcher_parameters(root, registry_file), {"verifier": "spawner"}).structured_content
 
     assert payload["status"] == "TIMEOUT"
-    marker = root / payload["run_directory"] / "child.pid"
+    marker = Path(payload["run_directory"]) / "child.pid"
     assert marker.exists(), "the fixture grandchild never started"
 
     first = marker.read_text()

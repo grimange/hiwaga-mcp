@@ -4,8 +4,11 @@ Two steps, deliberately separated so the first can be inspected without running
 anything:
 
 1. `build_execution_plan` turns a registry entry plus the validated repository
-   root into a fully resolved `ExecutionPlan`. Every path it produces has been
-   through the repository containment boundary.
+   root into a fully resolved `ExecutionPlan`. The interpreter, script, and
+   working directory all pass through the repository containment boundary; the
+   run directory does not, because it deliberately lives outside the
+   repository (see `hiwaga_mcp.services.runtime_state`) and containment proves
+   the opposite property.
 2. `execute_plan` runs that plan as a subprocess and classifies the outcome.
 
 There is no shell anywhere in this module. Processes are launched with an argv
@@ -15,6 +18,13 @@ timeout can terminate the whole process group rather than orphaning children.
 The caller contributes a verifier id and a mode name and nothing else. The
 executable, arguments, working directory, timeout, environment, and proof class
 all come from the trusted registry and server configuration.
+
+Run state — logs and whatever a verifier writes to its run directory — is this
+server's own control-plane state, never the inspected repository's. It lives
+under an external, XDG-based root (`$XDG_STATE_HOME/hiwaga-mcp`, falling back to
+`~/.local/state/hiwaga-mcp`), namespaced per repository, so a HIWAGA checkout
+never needs a `.gitignore` entry or any other awareness of this server to stay
+clean, and two checkouts on the same machine never collide.
 """
 
 from __future__ import annotations
@@ -40,12 +50,8 @@ from hiwaga_mcp.models.verification_registry import (
     VerifierMode,
 )
 from hiwaga_mcp.services.repository import resolve_within_repository
+from hiwaga_mcp.services.runtime_state import resolve_run_directory
 from hiwaga_mcp.services.verification_registry import load_verifier_registry, select_verifier
-
-#: Where controlled runtime state lives, relative to the HIWAGA root. Ignored
-#: scratch: nothing here is tracked evidence, and nothing is promoted from it.
-SCRATCH_DIRECTORY = ".hiwaga-mcp"
-RUNS_DIRECTORY = f"{SCRATCH_DIRECTORY}/runs"
 
 STDOUT_LOG_NAME = "stdout.log"
 STDERR_LOG_NAME = "stderr.log"
@@ -139,12 +145,15 @@ def build_execution_plan(
 ) -> ExecutionPlan:
     """Resolve a registry entry into the exact invocation that will run.
 
-    Every repository path — interpreter, script, working directory, run
-    directory — goes through `resolve_within_repository`, so a registry that
-    escaped schema validation still cannot reach outside the checkout.
+    Every repository path this plan actually runs against — interpreter,
+    script, working directory — goes through `resolve_within_repository`, so a
+    registry that escaped schema validation still cannot reach outside the
+    checkout. The run directory is deliberately not a repository path: it is
+    resolved externally by `resolve_run_directory` instead (see that module).
 
     Raises:
         TargetOutsideRepositoryError: a registry path escapes the repository.
+        RuntimeStateError: the external runtime-state root cannot be established.
     """
     root = repo_root.expanduser().resolve()
     identifier = run_id or new_run_id()
@@ -152,7 +161,7 @@ def build_execution_plan(
     executable = resolve_executable(root, definition.executable)
     script = resolve_within_repository(root, definition.script)
     cwd = resolve_within_repository(root, definition.working_directory)
-    run_directory = resolve_within_repository(root, f"{RUNS_DIRECTORY}/{identifier}")
+    run_directory = resolve_run_directory(root, identifier)
 
     argv = [str(executable), str(script)]
     argv += [arg.replace(RUN_DIRECTORY_TOKEN, str(run_directory)) for arg in mode.args]
@@ -212,11 +221,11 @@ def _tail(path: Path) -> tuple[str, int, bool]:
     return text, size, len(text.encode("utf-8")) < size
 
 
-def _artifacts(run_directory: Path, repo_root: Path) -> tuple[list[VerificationArtifact], bool]:
+def _artifacts(run_directory: Path) -> tuple[list[VerificationArtifact], bool]:
     """Enumerate what the verifier left in its own run directory.
 
-    Only this directory is inspected. The repository is never scanned for files
-    a verifier may have modified elsewhere.
+    Only this directory is inspected — never the repository, and never the rest
+    of the external state root or another repository's namespace under it.
     """
     logs = {STDOUT_LOG_NAME, STDERR_LOG_NAME}
     found: list[VerificationArtifact] = []
@@ -235,7 +244,7 @@ def _artifacts(run_directory: Path, repo_root: Path) -> tuple[list[VerificationA
             continue
         found.append(
             VerificationArtifact(
-                path=str(path.relative_to(repo_root)),
+                path=str(path),
                 kind=ArtifactKind.DIRECTORY if is_dir else ArtifactKind.FILE,
                 size_bytes=size,
             )
@@ -325,7 +334,7 @@ async def execute_plan(plan: ExecutionPlan, repo_root: Path) -> VerificationResu
 
     stdout_tail, stdout_bytes, stdout_cut = _tail(stdout_log)
     stderr_tail, stderr_bytes, stderr_cut = _tail(stderr_log)
-    artifacts, artifacts_truncated = _artifacts(plan.run_directory, root)
+    artifacts, artifacts_truncated = _artifacts(plan.run_directory)
 
     limitations = [_ACCEPTANCE_LIMITATION]
     if status is VerificationStatus.TIMEOUT:
@@ -350,9 +359,9 @@ async def execute_plan(plan: ExecutionPlan, repo_root: Path) -> VerificationResu
         timed_out=timed_out,
         duration_ms=duration_ms,
         run_id=plan.run_id,
-        run_directory=str(plan.run_directory.relative_to(root)),
-        stdout_log=str(stdout_log.relative_to(root)),
-        stderr_log=str(stderr_log.relative_to(root)),
+        run_directory=str(plan.run_directory),
+        stdout_log=str(stdout_log),
+        stderr_log=str(stderr_log),
         stdout_tail=stdout_tail,
         stderr_tail=stderr_tail,
         stdout_bytes=stdout_bytes,
@@ -389,10 +398,8 @@ async def run_verification(
 
 __all__ = [
     "FIXED_ENVIRONMENT",
-    "SCRATCH_DIRECTORY",
     "INHERITED_ENVIRONMENT",
     "MAX_ARTIFACTS",
-    "RUNS_DIRECTORY",
     "TAIL_CHARACTERS",
     "build_environment",
     "build_execution_plan",

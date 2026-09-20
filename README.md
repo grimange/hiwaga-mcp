@@ -101,7 +101,7 @@ ruff check .
   `HIWAGA_PROGRESS_DOCUMENT_INVALID`, `HIWAGA_PROJECT_STATE_UNAVAILABLE`,
   `HIWAGA_ASSET_AUTHORITY_INVALID`, `HIWAGA_WORKER_POLICY_INVALID`,
   `HIWAGA_VERIFIER_REGISTRY_INVALID`, `HIWAGA_UNKNOWN_VERIFIER`,
-  `HIWAGA_UNSUPPORTED_VERIFY_MODE`.
+  `HIWAGA_UNSUPPORTED_VERIFY_MODE`, `HIWAGA_RUNTIME_STATE_UNAVAILABLE`.
 - Typed vocabularies for later work: `GateDecision`, `VerificationStatus`,
   `ProofClass`.
 - One bootstrap diagnostic tool, `hiwaga_server_info`, with typed structured output.
@@ -358,8 +358,10 @@ case: execution itself broke, so nothing was established about what was checked.
 Tool errors (`is_error: true`, message led by a stable reason code) are reserved
 for invalid requests and untrustworthy configuration: `HIWAGA_UNKNOWN_VERIFIER`,
 `HIWAGA_UNSUPPORTED_VERIFY_MODE`, `HIWAGA_VERIFIER_REGISTRY_INVALID`,
-`HIWAGA_CONFIGURATION_INVALID`, `HIWAGA_REPOSITORY_IDENTITY_INVALID`, and
-`HIWAGA_TARGET_OUTSIDE_REPOSITORY`. A malformed registry is never partially
+`HIWAGA_CONFIGURATION_INVALID`, `HIWAGA_REPOSITORY_IDENTITY_INVALID`,
+`HIWAGA_TARGET_OUTSIDE_REPOSITORY`, and `HIWAGA_RUNTIME_STATE_UNAVAILABLE` (this
+server's own external state root cannot be established — see
+[Runtime state](#runtime-state)). A malformed registry is never partially
 trusted: no verifier from it runs.
 
 **Timeout.** Every registry entry carries an explicit positive timeout and the
@@ -367,12 +369,16 @@ caller cannot override it. On expiry the whole process group gets `SIGTERM`, the
 `SIGKILL` after a short grace period, and the process is reaped — so a verifier
 that spawned Godot or other children does not leave them running.
 
-**Logs and run directory.** Each invocation gets `.hiwaga-mcp/runs/<run-id>/`
-with a random, filesystem-safe id. Complete `stdout.log` and `stderr.log` are
-written there; the result carries only a bounded 2000-character tail of each plus
-the full byte counts, so a verbose verifier cannot consume unbounded response
-tokens. `artifacts` lists what the verifier left in that run directory only — the
-repository is never scanned for modified files.
+**Logs and run directory.** Each invocation gets its own run directory under
+this server's own external state root (see [Runtime state](#runtime-state)
+below), never inside the HIWAGA checkout, named by a random, filesystem-safe id.
+`run_directory`, `stdout_log`, `stderr_log`, and every artifact `path` are
+absolute paths into that external state. Complete `stdout.log` and `stderr.log`
+are written there; the result carries only a bounded 2000-character tail of each
+plus the full byte counts, so a verbose verifier cannot consume unbounded
+response tokens. `artifacts` lists what the verifier left in that run directory
+only — the repository is never scanned for modified files, and neither is any
+other repository's namespace under the state root.
 
 **Proof class** comes from the registry, never the caller: a caller cannot claim
 a headless verifier produced native rendered evidence. No status asserts operator
@@ -413,16 +419,32 @@ and any HTTP, OAuth, or remote transport.
 Verification executes registered verifiers only. Nothing is promoted into
 `docs/evidence/`, and asset authority covers the machine-readable registry only.
 
-## Runtime scratch state
+## Runtime state
 
-`hiwaga_verify` writes each run to `.hiwaga-mcp/runs/<run-id>/` inside the
-configured HIWAGA checkout: `stdout.log`, `stderr.log`, and whatever the verifier
-itself wrote there. Nothing else in the repository is written, and results are
-never automatically promoted into `docs/evidence/` — evidence promotion is a
-separate lifecycle that does not exist yet.
+`hiwaga_verify` writes every run — `stdout.log`, `stderr.log`, and whatever the
+verifier itself wrote — to a directory this server owns, entirely outside the
+configured HIWAGA checkout:
 
-**The target HIWAGA checkout should ignore `.hiwaga-mcp/`.** Add it to that
-repository's `.gitignore`; otherwise run directories show up as untracked files.
+```text
+$XDG_STATE_HOME/hiwaga-mcp/repositories/<repository-key>/runs/<run-id>/
+```
+
+falling back to `~/.local/state/hiwaga-mcp/...` when `XDG_STATE_HOME` is unset,
+blank, or not an absolute path (a relative or `~`-prefixed value is treated the
+same as unset, deterministically, rather than being anchored to the current
+working directory). `<repository-key>` is a short SHA-256 digest of the
+checkout's canonical absolute path, so two different HIWAGA checkouts never
+share a namespace and one checkout keeps the same namespace regardless of its
+branch, HEAD, or worktree state. State directories are created lazily, only
+when a verifier actually runs — never merely by starting the server or calling
+any other tool.
+
+**No target-repository configuration is required or read.** A HIWAGA checkout
+needs no `.gitignore` entry, no `.git/info/exclude` entry, and no awareness of
+`hiwaga-mcp` at all to stay clean: `hiwaga_verify` does not write inside it.
+Nothing is written to `docs/evidence/` either — evidence promotion is a separate
+lifecycle that does not exist yet. Run retention (pruning, TTLs, size limits) is
+not implemented; runs accumulate under the state root until removed by hand.
 
 ## Layout
 
@@ -442,7 +464,8 @@ src/hiwaga_mcp/
     ├── preflight.py       rule table combining project state and asset authority into a decision
     ├── model_gate.py      worker policy loading and the worker/model membership decision
     ├── verification_registry.py  registry loading, strict validation, verifier/mode lookup
-    └── verification.py    execution plan construction and controlled subprocess execution
+    ├── verification.py    execution plan construction and controlled subprocess execution
+    └── runtime_state.py   external XDG state root, per-repository namespace, run directory
 
 src/hiwaga_mcp/policy/worker_policy.json      canonical worker authorization policy (packaged)
 src/hiwaga_mcp/policy/verifier_registry.json  canonical verifier allowlist (packaged)

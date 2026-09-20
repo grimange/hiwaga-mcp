@@ -226,6 +226,21 @@ def hiwaga_repo(tmp_path: Path) -> Path:
     return make_hiwaga_repo(tmp_path / "hiwaga")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_runtime_state_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Every test gets its own `XDG_STATE_HOME`, so the suite never touches the operator's real state.
+
+    `hiwaga_verify` now writes outside whatever repository it inspects, so a
+    test that does not isolate this would otherwise pollute the real
+    `~/.local/state/hiwaga-mcp` on the machine running the suite. This applies
+    even to tests that never call verify: it is cheap, and it means no test can
+    accidentally regress the isolation by omission.
+    """
+    state_home = tmp_path / "xdg-state-home"
+    monkeypatch.setenv("XDG_STATE_HOME", str(state_home))
+    return state_home
+
+
 @pytest.fixture
 def outside_dir(tmp_path: Path) -> Path:
     """A directory that is a sibling of, and never inside, `hiwaga_repo`."""

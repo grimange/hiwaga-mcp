@@ -239,9 +239,7 @@ def test_unestablishable_git_state_refuses_with_the_unavailable_code(tmp_path: P
     _run(body)
 
 
-def test_working_directory_is_not_a_fallback_repository(
-    state_repo: Path, monkeypatch: Any
-) -> None:
+def test_working_directory_is_not_a_fallback_repository(state_repo: Path, monkeypatch: Any) -> None:
     monkeypatch.chdir(state_repo)
     server = build_server(config=None)  # unconfigured, while the CWD is a valid HIWAGA checkout
 

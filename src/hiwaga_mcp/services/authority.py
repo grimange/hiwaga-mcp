@@ -67,9 +67,7 @@ class _DuplicateKeyError(ValueError):
 
 
 def _invalid(message: str, problem: str, **details: Any) -> AssetAuthorityError:
-    return AssetAuthorityError(
-        message, details={"problem": problem, "path": ASSET_AUTHORITY_PATH, **details}
-    )
+    return AssetAuthorityError(message, details={"problem": problem, "path": ASSET_AUTHORITY_PATH, **details})
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

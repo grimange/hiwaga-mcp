@@ -227,9 +227,10 @@ def build_server(
             "executable, arguments, working directory, timeout, environment, and proof class all "
             "come from the canonical verifier registry, and no arbitrary command can be run. "
             "Returns PASS, FAIL, TIMEOUT, or EXECUTION_ERROR as an ordinary result — a verifier "
-            "that finds a defect is a FAIL, not a tool error. Complete logs are written to an "
-            "ignored scratch run directory and only a bounded tail is returned. Independent of "
-            "preflight and the model gate, which it never calls."
+            "that finds a defect is a FAIL, not a tool error. Complete logs are written to this "
+            "server's own external run directory, outside the HIWAGA checkout, and only a "
+            "bounded tail is returned. Independent of preflight and the model gate, which it "
+            "never calls."
         ),
     )
     async def hiwaga_verify(

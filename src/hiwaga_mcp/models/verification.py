@@ -54,7 +54,9 @@ class VerificationArtifact(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    path: str = Field(description="Repository-relative path of the artifact.")
+    path: str = Field(
+        description="Absolute path of the artifact, inside this server's external run directory."
+    )
     kind: ArtifactKind = Field(description="Whether the artifact is a file or a directory.")
     size_bytes: int = Field(description="Size in bytes; 0 for a directory.")
 
@@ -112,10 +114,12 @@ class VerificationResult(BaseModel):
     duration_ms: int = Field(description="Wall-clock duration of the execution attempt.")
 
     run_id: str = Field(description="Identifier of this invocation.")
-    run_directory: str = Field(description="Repository-relative run directory.")
+    run_directory: str = Field(
+        description="Absolute run directory, external to the repository (this server's own state)."
+    )
 
-    stdout_log: str = Field(description="Repository-relative path of the complete stdout log.")
-    stderr_log: str = Field(description="Repository-relative path of the complete stderr log.")
+    stdout_log: str = Field(description="Absolute path of the complete stdout log.")
+    stderr_log: str = Field(description="Absolute path of the complete stderr log.")
 
     stdout_tail: str = Field(description="Bounded tail of stdout; the full log is on disk.")
     stderr_tail: str = Field(description="Bounded tail of stderr; the full log is on disk.")
