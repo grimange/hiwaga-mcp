@@ -11,15 +11,23 @@ from __future__ import annotations
 import logging
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from hiwaga_mcp import SERVER_NAME, SERVER_TITLE, __version__
 from hiwaga_mcp.config import REPO_ROOT_ENV_VAR, ServerConfig, load_config
-from hiwaga_mcp.errors import ConfigurationError
+from hiwaga_mcp.errors import ConfigurationError, HiwagaError
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
+from hiwaga_mcp.models.state import ProjectStateResult
+from hiwaga_mcp.services.project_state import get_project_state
 from hiwaga_mcp.services.repository import validate_repository_identity
 
 logger = logging.getLogger(__name__)
+
+
+def _refusal(error: HiwagaError) -> ToolError:
+    """Render a deterministic refusal: the stable reason code leads the message."""
+    return ToolError(f"{error.code.value}: {error.message}")
 
 
 def build_server(
@@ -84,6 +92,31 @@ def build_server(
             repository_identity=validate_repository_identity(config.repo_root),
             configuration_error=None,
         )
+
+    @server.tool(
+        name="hiwaga_project_state",
+        title="HIWAGA project state",
+        description=(
+            "Report the current deterministic development state of the configured HIWAGA "
+            "repository: Git branch/HEAD/worktree facts plus the fields declared in the first "
+            "`##` block of docs/progress/HIWAGA_PROGRESS.md. Takes no arguments; the repository "
+            "is always the configured HIWAGA_REPO_ROOT. Refuses with a stable reason code "
+            "instead of returning partial state."
+        ),
+    )
+    def hiwaga_project_state() -> ProjectStateResult:
+        if config is None:
+            raise _refusal(
+                config_error
+                or ConfigurationError(
+                    f"{REPO_ROOT_ENV_VAR} is not configured for this server process.",
+                    details={"env_var": REPO_ROOT_ENV_VAR, "problem": "not_set"},
+                )
+            )
+        try:
+            return get_project_state(config.repo_root)
+        except HiwagaError as exc:
+            raise _refusal(exc) from exc
 
     return server
 

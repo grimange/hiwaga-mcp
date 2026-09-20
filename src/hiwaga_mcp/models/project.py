@@ -1,8 +1,8 @@
 """Repository identity models.
 
 These describe whether a configured root is a valid HIWAGA checkout. They do
-not describe project progress or state; `hiwaga_project_state` is a later
-corridor and owns that vocabulary.
+not describe project progress or state; that vocabulary lives in
+`hiwaga_mcp.models.state`.
 """
 
 from __future__ import annotations

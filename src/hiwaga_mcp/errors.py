@@ -25,6 +25,8 @@ class ReasonCode(str, Enum):
     CONFIGURATION_INVALID = "HIWAGA_CONFIGURATION_INVALID"
     REPOSITORY_IDENTITY_INVALID = "HIWAGA_REPOSITORY_IDENTITY_INVALID"
     TARGET_OUTSIDE_REPOSITORY = "HIWAGA_TARGET_OUTSIDE_REPOSITORY"
+    PROGRESS_DOCUMENT_INVALID = "HIWAGA_PROGRESS_DOCUMENT_INVALID"
+    PROJECT_STATE_UNAVAILABLE = "HIWAGA_PROJECT_STATE_UNAVAILABLE"
 
 
 class HiwagaError(Exception):
@@ -60,9 +62,23 @@ class TargetOutsideRepositoryError(HiwagaError):
     code = ReasonCode.TARGET_OUTSIDE_REPOSITORY
 
 
+class ProgressDocumentError(HiwagaError):
+    """The progress ledger is missing, unreadable, empty, or has no current block."""
+
+    code = ReasonCode.PROGRESS_DOCUMENT_INVALID
+
+
+class ProjectStateUnavailableError(HiwagaError):
+    """Repository state could not be established well enough to report it."""
+
+    code = ReasonCode.PROJECT_STATE_UNAVAILABLE
+
+
 __all__ = [
     "ConfigurationError",
     "HiwagaError",
+    "ProgressDocumentError",
+    "ProjectStateUnavailableError",
     "ReasonCode",
     "RepositoryIdentityError",
     "TargetOutsideRepositoryError",

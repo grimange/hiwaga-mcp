@@ -39,6 +39,8 @@ def test_reason_codes_are_prefixed_and_stable() -> None:
         "HIWAGA_CONFIGURATION_INVALID",
         "HIWAGA_REPOSITORY_IDENTITY_INVALID",
         "HIWAGA_TARGET_OUTSIDE_REPOSITORY",
+        "HIWAGA_PROGRESS_DOCUMENT_INVALID",
+        "HIWAGA_PROJECT_STATE_UNAVAILABLE",
     }
 
 

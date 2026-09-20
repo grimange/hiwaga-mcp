@@ -11,12 +11,16 @@ from hiwaga_mcp.models.project import (
     SentinelCheck,
     SentinelKind,
 )
+from hiwaga_mcp.models.state import AmbiguityGate, GitState, ProjectStateResult
 from hiwaga_mcp.models.verification import ProofClass, VerificationStatus
 
 __all__ = [
+    "AmbiguityGate",
     "ConfigurationStatus",
     "ErrorDetail",
     "GateDecision",
+    "GitState",
+    "ProjectStateResult",
     "ProofClass",
     "RepositoryIdentityReport",
     "RepositoryIdentityStatus",

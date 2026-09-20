@@ -37,7 +37,7 @@ def test_module_entrypoint_serves_mcp_over_stdio(hiwaga_repo: Path) -> None:
                 assert info.name == "hiwaga-mcp"
 
                 names = {tool.name for tool in (await client.list_tools()).tools}
-                assert names == {"hiwaga_server_info"}
+                assert names == {"hiwaga_server_info", "hiwaga_project_state"}
 
                 result = await client.call_tool("hiwaga_server_info", {})
                 assert result.is_error is False
@@ -71,3 +71,23 @@ def test_stdio_server_reports_unconfigured_root_without_dying(tmp_path: Path) ->
         anyio.run(body)
     except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
         pytest.fail(f"stdio bootstrap did not complete the handshake in time: {exc}")
+
+
+def test_stdio_server_serves_project_state(state_repo: Path) -> None:
+    """The new tool works through a real subprocess, and refuses without a HIWAGA checkout."""
+
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_server_parameters(state_repo)) as client:
+                result = await client.call_tool("hiwaga_project_state", {})
+                assert result.is_error is False
+                payload = result.structured_content
+                assert payload["repository_root"] == str(state_repo.resolve())
+                assert payload["branch"] == "main"
+                assert payload["ambiguity_gate"] == "TARGET_CLEAR"
+                assert payload["current_block_heading"] == "Current Block Title — 2026-09-20"
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio project-state call did not complete in time: {exc}")

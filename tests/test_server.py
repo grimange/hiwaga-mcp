@@ -20,7 +20,7 @@ from hiwaga_mcp.server import build_server, create_server_from_environment
 
 from .conftest import make_hiwaga_repo
 
-EXPECTED_TOOLS = {"hiwaga_server_info"}
+EXPECTED_TOOLS = {"hiwaga_server_info", "hiwaga_project_state"}
 
 
 def _run(async_fn: Any) -> Any:
@@ -42,8 +42,8 @@ def test_server_initializes_and_reports_its_identity(hiwaga_repo: Path) -> None:
     _run(body)
 
 
-def test_tool_list_is_exactly_the_bootstrap_surface(hiwaga_repo: Path) -> None:
-    """No planned P0 product tool is registered by this corridor."""
+def test_tool_list_is_exactly_the_current_surface(hiwaga_repo: Path) -> None:
+    """Only bootstrap diagnostics and `hiwaga_project_state` are registered."""
     server = build_server(config=ServerConfig(repo_root=hiwaga_repo))
 
     async def body() -> None:
@@ -54,9 +54,8 @@ def test_tool_list_is_exactly_the_bootstrap_surface(hiwaga_repo: Path) -> None:
     _run(body)
 
 
-def test_no_planned_p0_tool_is_registered(hiwaga_repo: Path) -> None:
+def test_no_later_p0_tool_is_registered(hiwaga_repo: Path) -> None:
     deferred = {
-        "hiwaga_project_state",
         "hiwaga_context",
         "hiwaga_authority",
         "hiwaga_preflight",
