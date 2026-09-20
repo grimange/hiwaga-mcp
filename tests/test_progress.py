@@ -258,9 +258,82 @@ def test_absent_gate_is_none_never_target_clear() -> None:
     assert block.ambiguity_gate is None
 
 
-def test_gate_named_only_inside_another_field_is_not_a_declaration() -> None:
-    block = _block("- **Current Focus / Status:** `X`. Ambiguity gate `TARGET_CLEAR`; more.")
+@pytest.mark.parametrize("gate", list(AmbiguityGate))
+def test_inline_only_canonical_token_is_recognized(gate: AmbiguityGate) -> None:
+    block = _block(f"- **Current Focus / Status:** `X`. Ambiguity gate `{gate.value}`; more.")
+    assert block.ambiguity_gate is gate
+    assert not any("ambiguity" in note.lower() for note in block.limitations)
+
+
+def test_inline_token_is_found_in_any_recognized_field() -> None:
+    block = _block("- **Phase:** P\n- **Next Bounded Step:** gate is TARGET_PARTIALLY_CONSTRAINED here")
+    assert block.ambiguity_gate is AmbiguityGate.TARGET_PARTIALLY_CONSTRAINED
+
+
+def test_no_canonical_token_anywhere_is_none_without_a_note() -> None:
+    block = _block("- **Current Focus / Status:** `X`. Clear target, partially constrained, ambiguous task.")
     assert block.ambiguity_gate is None
+    assert not any("mbiguity" in note for note in block.limitations)
+
+
+def test_gate_synonyms_and_near_tokens_are_not_gate_values() -> None:
+    for text in ("target clear", "TARGET_CLEARLY", "target_clear", "XTARGET_AMBIGUOUS", "TARGET-CLEAR"):
+        assert _block(f"- **Status:** {text}").ambiguity_gate is None, text
+
+
+def test_repeated_identical_inline_token_is_not_a_conflict() -> None:
+    block = _block("- **Status:** TARGET_CLEAR here\n- **Next Bounded Step:** TARGET_CLEAR, TARGET_CLEAR")
+    assert block.ambiguity_gate is AmbiguityGate.TARGET_CLEAR
+    assert not any("mbiguity" in note for note in block.limitations)
+
+
+def test_conflicting_inline_tokens_are_none_with_a_limitation() -> None:
+    block = _block("- **Status:** TARGET_CLEAR here\n- **Next Bounded Step:** but TARGET_AMBIGUOUS there")
+    assert block.ambiguity_gate is None
+    assert any(
+        "several ambiguity gates" in note and "TARGET_AMBIGUOUS" in note and "TARGET_CLEAR" in note
+        for note in block.limitations
+    )
+
+
+def test_explicit_gate_with_the_same_inline_token_uses_that_gate() -> None:
+    block = _block("- **Ambiguity Gate:** TARGET_CLEAR\n- **Status:** ok, TARGET_CLEAR")
+    assert block.ambiguity_gate is AmbiguityGate.TARGET_CLEAR
+    assert not any("mbiguity" in note for note in block.limitations)
+
+
+def test_explicit_gate_ignores_inline_text_that_is_not_a_canonical_token() -> None:
+    block = _block("- **Ambiguity Gate:** TARGET_CLEAR\n- **Status:** the target is ambiguous")
+    assert block.ambiguity_gate is AmbiguityGate.TARGET_CLEAR
+
+
+def test_explicit_gate_with_a_conflicting_inline_token_is_none_with_a_limitation() -> None:
+    block = _block("- **Ambiguity Gate:** TARGET_CLEAR\n- **Status:** but TARGET_AMBIGUOUS")
+    assert block.ambiguity_gate is None
+    assert any("declares TARGET_CLEAR" in note and "TARGET_AMBIGUOUS" in note for note in block.limitations)
+
+
+def test_unrecognized_explicit_gate_is_not_rescued_by_an_inline_token() -> None:
+    block = _block("- **Ambiguity Gate:** MAYBE\n- **Status:** TARGET_CLEAR")
+    assert block.ambiguity_gate is None
+    assert any("none of the recognized gate values" in note for note in block.limitations)
+
+
+def test_historical_only_canonical_token_does_not_affect_the_current_gate() -> None:
+    text = (
+        "## Current\n- **Phase:** P\n\n"
+        "## Older\n- **Ambiguity Gate:** TARGET_AMBIGUOUS\n- **Status:** TARGET_CLEAR"
+    )
+    block = parse_current_block(text)
+    assert block.ambiguity_gate is None
+    assert block.limitations == ()
+
+
+def test_historical_token_cannot_conflict_with_the_current_explicit_gate() -> None:
+    text = "## Current\n- **Ambiguity Gate:** TARGET_CLEAR\n\n## Older\n- **Status:** TARGET_AMBIGUOUS\n"
+    block = parse_current_block(text)
+    assert block.ambiguity_gate is AmbiguityGate.TARGET_CLEAR
+    assert block.limitations == ()
 
 
 def test_unrecognized_gate_value_is_none_and_reported() -> None:
@@ -290,6 +363,16 @@ def test_conflicting_gate_values_are_none_and_reported() -> None:
         "Operator acceptance is pending",
         "OPERATOR VISUAL ACCEPTANCE PENDING",
         "one operator outing",
+        # action-oriented forms
+        "operator runs the native review",
+        "Operator run the native review",
+        "operator performs the integrated outing",
+        "operator performs review of the build",
+        "operator plays the verified proof",
+        "Operator play the candidate",
+        "human reviews the candidate",
+        "human performs the focused review",
+        "`STATE__READY`. Then the OPERATOR RUNS THE NATIVE REVIEW (states 03-08).",
     ],
 )
 def test_explicit_operator_wording_is_detected(text: str) -> None:
@@ -310,6 +393,25 @@ def test_explicit_operator_wording_is_detected(text: str) -> None:
         "The operator experientially accepted the outing.",
         "Whole motion remains NOT OPERATOR ACCEPTED.",
         "operatoring review",
+        # negated / not-an-explicit-requirement forms
+        "No human review is required.",
+        "Operator action is not required.",
+        "No operator action required before next step.",
+        "Do not have the operator run the review.",
+        "operator does not run the native review",
+        # incidental words without an explicit human/operator subject + action
+        "native review harness",
+        "run the native review",
+        "the player plays the build",
+        "play test harness",
+        "acceptance criteria are listed",
+        "review the candidate",
+        "reviews are automated",
+        "operator facing review tool",
+        "the human readable review report",
+        "the operator ran the review",
+        "human reviewed the candidate",
+        "operators run things",
     ],
 )
 def test_absent_or_negated_operator_wording_is_not_detected(text: str | None) -> None:
@@ -325,6 +427,48 @@ def test_operator_required_comes_from_the_current_block_fields() -> None:
 def test_operator_wording_outside_the_scanned_fields_is_ignored() -> None:
     block = _block("- **Evidence:** operator review happened\n- **Next Bounded Step:** implement it")
     assert block.operator_required is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "No automatic Astra run. Operator runs the native review.",
+        "No project-level reassessment; operator plays the outing.",
+        "Do not begin cutover, human reviews the candidate.",
+        "No operator review required. Operator runs the native review.",
+    ],
+)
+def test_negation_in_another_clause_does_not_suppress_a_positive_requirement(text: str) -> None:
+    assert detect_operator_requirement(text) is True
+
+
+def test_operator_action_in_next_bounded_step_and_status_is_detected_at_block_level() -> None:
+    assert _block("- **Next Bounded Step:** operator runs the native review").operator_required is True
+    assert _block("- **Status:** `X`. Human performs the focused review.").operator_required is True
+    assert _block("- **Next Human Goal:** operator plays the verified proof").operator_required is True
+
+
+def test_negated_operator_wording_at_block_level_stays_false_without_a_note() -> None:
+    block = _block("- **Next Bounded Step:** implement it. No operator review required.")
+    assert block.operator_required is False
+    assert not any("contradictory" in note for note in block.limitations)
+
+
+def test_contradictory_operator_wording_is_true_and_reported() -> None:
+    block = _block(
+        "- **Status:** No operator review required.\n"
+        "- **Next Bounded Step:** operator runs the native review."
+    )
+    assert block.operator_required is True
+    assert any("contradictory" in note for note in block.limitations)
+
+
+def test_operator_action_wording_outside_the_scanned_fields_or_in_history_is_ignored() -> None:
+    block = _block("- **Evidence:** operator runs the native review\n- **Next Bounded Step:** implement it")
+    assert block.operator_required is False
+    history = "## Current\n- **Phase:** P\n\n## Older\n- **Status:** operator runs the review\n"
+    historical = parse_current_block(history)
+    assert historical.operator_required is False
 
 
 def test_operator_required_is_false_when_nothing_explicit_is_declared() -> None:

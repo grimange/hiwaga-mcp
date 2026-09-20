@@ -121,6 +121,25 @@ def test_undeclared_gate_and_fields_are_json_null(state_repo: Path) -> None:
     _run(body)
 
 
+def test_inline_gate_and_operator_action_reach_the_mcp_output(state_repo: Path) -> None:
+    write_progress(
+        state_repo,
+        "## Hardened\n\n"
+        "- **Current Focus / Status:** `X__READY`. Ambiguity gate `TARGET_PARTIALLY_CONSTRAINED`.\n"
+        "- **Next Bounded Step:** operator runs the native review.\n",
+    )
+    server = build_server(config=ServerConfig(repo_root=state_repo))
+
+    async def body() -> None:
+        async with Client(server) as client:
+            payload = (await client.call_tool(TOOL, {})).structured_content
+            assert payload["ambiguity_gate"] == "TARGET_PARTIALLY_CONSTRAINED"
+            assert payload["operator_required"] is True
+            assert set(payload) == REQUIRED_OUTPUT_FIELDS  # public schema unchanged
+
+    _run(body)
+
+
 def test_caller_cannot_supply_a_repository(state_repo: Path, tmp_path: Path) -> None:
     other = make_hiwaga_repo(tmp_path / "other")
     write_progress(other, "## Other\n- **Phase:** OTHER\n")

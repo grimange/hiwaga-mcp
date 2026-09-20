@@ -65,12 +65,20 @@ _BOLD_LABEL_RE = re.compile(r"^\*\*(?P<label>[^*\n]+?)\*\*(?P<rest>.*)$")
 _PLAIN_LABEL_RE = re.compile(r"^(?P<label>[A-Za-z][A-Za-z /&-]{0,60}?)[ \t]*:(?:[ \t]+(?P<rest>.*))?$")
 _GATE_RE = re.compile(r"\b(TARGET_CLEAR|TARGET_PARTIALLY_CONSTRAINED|TARGET_AMBIGUOUS)\b")
 
-# Operator requirement: an explicit operator/human review, outing, playtest, or
-# acceptance, with only a closed set of modifier words allowed in between.
+# Operator requirement: an explicit operator/human subject followed either by a
+# closed set of modifiers and a review/outing/playtest/acceptance noun
+# ("operator visual acceptance"), or directly by an action verb
+# ("operator runs the native review"). Subject and action must both be present.
+_OPERATOR_SUBJECT = r"(?:(?:human )?operator|human)"
 _OPERATOR_RE = re.compile(
-    r"\b(?:(?:human )?operator|human) (?:(?:visual|experiential|integrated|native) )*"
-    r"(?:review|outing|playtest|acceptance)\b"
+    rf"\b{_OPERATOR_SUBJECT} (?:"
+    r"(?:(?:visual|experiential|integrated|native) )*(?:review|outing|playtest|acceptance)"
+    r"|(?:runs?|performs?|plays?|reviews?)"
+    r")\b"
 )
+# Negation is judged inside one clause, so a `no` in an earlier sentence or
+# clause cannot suppress a later, separately stated requirement.
+_CLAUSE_SPLIT_RE = re.compile(r"[.;:!?,\n—–]")
 _NEGATORS = frozenset({"no", "not", "without", "never", "nor"})
 _TRAILING_NEGATION_RE = re.compile(r"^(?:is |are )?(?:not|no longer) (?:required|needed)\b")
 _OPERATOR_SCANNED_FIELDS = ("current_focus", "status", "next_bounded_step", "next_human_goal")
@@ -233,38 +241,84 @@ def _collect_fields(body: list[str]) -> tuple[dict[str, str], dict[str, str], li
     return values, sources, notes
 
 
-def _parse_ambiguity_gate(value: str | None, notes: list[str]) -> AmbiguityGate | None:
-    if value is None:
-        return None
-    found = sorted(set(_GATE_RE.findall(value)))
-    if len(found) == 1:
-        return AmbiguityGate(found[0])
-    reason = "names none of the recognized gate values"
-    if found:
-        reason = f"names several gates ({', '.join(found)})"
-    notes.append(f"`Ambiguity Gate` is declared but {reason}; ambiguity_gate is null.")
-    return None
+def _resolve_ambiguity_gate(values: dict[str, str], notes: list[str]) -> AmbiguityGate | None:
+    """Resolve the current block's gate from exact canonical tokens only.
 
-
-def detect_operator_requirement(*texts: str | None) -> bool:
-    """True when any text explicitly names an operator/human review, outing, playtest, or acceptance.
-
-    Matches a closed phrase set on lower-cased, punctuation-stripped text and
-    ignores a match that a nearby `no`/`not`/`without` (before) or `not
-    required`/`not needed` (after) negates. It is not a semantic classifier.
+    An `Ambiguity Gate:` field wins when it names exactly one token; canonical
+    tokens inside the other recognized fields are then used only to detect a
+    contradiction. Without that field, exactly one distinct inline token is
+    used. Any disagreement is `None` plus a note, never a silent choice.
     """
+    inline = {
+        token
+        for name, value in values.items()
+        if name != "ambiguity_gate"
+        for token in _GATE_RE.findall(value)
+    }
+
+    explicit = values.get("ambiguity_gate")
+    if explicit is None:
+        if len(inline) == 1:
+            return AmbiguityGate(next(iter(inline)))
+        if inline:
+            notes.append(
+                f"Current-block fields name several ambiguity gates ({', '.join(sorted(inline))}); "
+                "ambiguity_gate is null."
+            )
+        return None
+
+    declared = sorted(set(_GATE_RE.findall(explicit)))
+    if len(declared) != 1:
+        reason = "names none of the recognized gate values"
+        if declared:
+            reason = f"names several gates ({', '.join(declared)})"
+        notes.append(f"`Ambiguity Gate` is declared but {reason}; ambiguity_gate is null.")
+        return None
+
+    conflicting = sorted(inline - {declared[0]})
+    if conflicting:
+        notes.append(
+            f"`Ambiguity Gate` declares {declared[0]} but other current-block fields name "
+            f"{', '.join(conflicting)}; ambiguity_gate is null."
+        )
+        return None
+    return AmbiguityGate(declared[0])
+
+
+def _operator_signals(*texts: str | None) -> tuple[int, int]:
+    """Count `(affirmed, negated)` explicit operator/human requirements in `texts`.
+
+    Text is split into clauses; each is lower-cased and stripped to alphanumeric
+    words. A match is negated by a `no`/`not`/`without`/`never`/`nor` among the
+    three words before it, or `not required`/`not needed` right after it, within
+    the same clause.
+    """
+    affirmed = negated = 0
     for text in texts:
         if not text:
             continue
-        normalized = " ".join(re.sub(r"[^a-z0-9]+", " ", text.lower()).split())
-        for match in _OPERATOR_RE.finditer(normalized):
-            before = normalized[: match.start()].split()[-3:]
-            if _NEGATORS.intersection(before):
-                continue
-            if _TRAILING_NEGATION_RE.match(normalized[match.end() :].lstrip()):
-                continue
-            return True
-    return False
+        for clause in _CLAUSE_SPLIT_RE.split(text):
+            normalized = " ".join(re.sub(r"[^a-z0-9]+", " ", clause.lower()).split())
+            for match in _OPERATOR_RE.finditer(normalized):
+                before = normalized[: match.start()].split()[-3:]
+                after = normalized[match.end() :].lstrip()
+                if _NEGATORS.intersection(before) or _TRAILING_NEGATION_RE.match(after):
+                    negated += 1
+                else:
+                    affirmed += 1
+    return affirmed, negated
+
+
+def detect_operator_requirement(*texts: str | None) -> bool:
+    """True when any text explicitly requires an operator/human review, outing, playtest, or acceptance.
+
+    Requires an explicit operator/human subject with a closed review/outing/
+    playtest/acceptance noun or a run/perform/play/review verb; generic words
+    such as `review` or `play` alone never count. A negated match does not count,
+    and negation never suppresses a separate affirmed match. It is not a
+    semantic classifier.
+    """
+    return _operator_signals(*texts)[0] > 0
 
 
 def parse_current_block(text: str) -> ProgressBlock:
@@ -286,8 +340,15 @@ def parse_current_block(text: str) -> ProgressBlock:
     if not values:
         notes.append("No supported progress fields were recognized in the current block.")
 
-    gate = _parse_ambiguity_gate(values.get("ambiguity_gate"), notes)
-    operator_required = detect_operator_requirement(*(values.get(f) for f in _OPERATOR_SCANNED_FIELDS))
+    gate = _resolve_ambiguity_gate(values, notes)
+
+    affirmed, negated = _operator_signals(*(values.get(f) for f in _OPERATOR_SCANNED_FIELDS))
+    operator_required = affirmed > 0
+    if affirmed and negated:
+        notes.append(
+            "Operator wording is contradictory: the current block both requires and negates an operator "
+            "action; operator_required is true because an explicit requirement is declared."
+        )
 
     return ProgressBlock(
         heading=heading,
