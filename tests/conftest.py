@@ -17,6 +17,22 @@ import pytest
 from hiwaga_mcp.models.project import SentinelKind
 from hiwaga_mcp.services.repository import REQUIRED_SENTINELS
 
+from .verifier_fixtures import (
+    FIXTURE_VERIFIERS,
+    fixture_registry,
+    install_fixture_verifiers,
+    install_repo_python,
+    registry_text,
+)
+
+__all__ = [
+    "FIXTURE_VERIFIERS",
+    "fixture_registry",
+    "install_fixture_verifiers",
+    "install_repo_python",
+    "registry_text",
+]
+
 
 def make_hiwaga_repo(root: Path, *, omit: tuple[str, ...] = ()) -> Path:
     """Create a minimal structure satisfying HIWAGA identity sentinels.
@@ -217,3 +233,16 @@ def outside_dir(tmp_path: Path) -> Path:
     target.mkdir(parents=True, exist_ok=True)
     (target / "secret.txt").write_text("outside\n", encoding="utf-8")
     return target
+
+
+@pytest.fixture
+def verify_repo(tmp_path: Path) -> Path:
+    """A valid fixture checkout carrying a repo interpreter and the fixture verifiers.
+
+    Self-contained: it borrows the running interpreter by symlink but touches no
+    real HIWAGA checkout and needs no Git.
+    """
+    root = make_hiwaga_repo(tmp_path / "hiwaga")
+    install_repo_python(root)
+    install_fixture_verifiers(root)
+    return root

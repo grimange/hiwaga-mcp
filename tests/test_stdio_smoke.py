@@ -43,6 +43,7 @@ def test_module_entrypoint_serves_mcp_over_stdio(hiwaga_repo: Path) -> None:
                     "hiwaga_authority",
                     "hiwaga_preflight",
                     "hiwaga_model_gate",
+                    "hiwaga_verify",
                 }
 
                 result = await client.call_tool("hiwaga_server_info", {})

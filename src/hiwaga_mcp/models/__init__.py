@@ -27,10 +27,24 @@ from hiwaga_mcp.models.project import (
     SentinelKind,
 )
 from hiwaga_mcp.models.state import AmbiguityGate, GitState, ProjectStateResult
-from hiwaga_mcp.models.verification import ProofClass, VerificationStatus
+from hiwaga_mcp.models.verification import (
+    ArtifactKind,
+    ExecutionPlan,
+    ProofClass,
+    VerificationArtifact,
+    VerificationResult,
+    VerificationStatus,
+)
+from hiwaga_mcp.models.verification_registry import (
+    ExecutableStrategy,
+    VerifierDefinition,
+    VerifierMode,
+    VerifierRegistry,
+)
 
 __all__ = [
     "AmbiguityGate",
+    "ArtifactKind",
     "AuthorityResolution",
     "AuthorityResult",
     "AuthorityUse",
@@ -55,5 +69,12 @@ __all__ = [
     "ServerInfoResult",
     "TargetPreflightResult",
     "TaskClass",
+    "ExecutableStrategy",
+    "ExecutionPlan",
+    "VerificationArtifact",
+    "VerificationResult",
+    "VerifierDefinition",
+    "VerifierMode",
+    "VerifierRegistry",
     "VerificationStatus",
 ]

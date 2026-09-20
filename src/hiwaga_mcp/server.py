@@ -23,18 +23,20 @@ from hiwaga_mcp.config import (
     load_config,
     load_worker_identity,
 )
-from hiwaga_mcp.errors import ConfigurationError, HiwagaError
+from hiwaga_mcp.errors import ConfigurationError, HiwagaError, RepositoryIdentityError
 from hiwaga_mcp.models.authority import AuthorityResult
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
 from hiwaga_mcp.models.model_gate import ModelGateResult, TaskClass
 from hiwaga_mcp.models.preflight import PreflightOperation, PreflightRequest, PreflightResult
 from hiwaga_mcp.models.state import ProjectStateResult
+from hiwaga_mcp.models.verification import VerificationResult
 from hiwaga_mcp.services.authority import resolve_authority
 from hiwaga_mcp.services.model_gate import run_model_gate
 from hiwaga_mcp.services.preflight import run_preflight
 from hiwaga_mcp.services.project_state import get_project_state
 from hiwaga_mcp.services.repository import validate_repository_identity
+from hiwaga_mcp.services.verification import run_verification
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ def build_server(
     config_error: ConfigurationError | None = None,
     identity: WorkerIdentity | None = None,
     worker_policy_text: str | None = None,
+    verifier_registry_text: str | None = None,
 ) -> MCPServer:
     """Construct the MCP server.
 
@@ -57,6 +60,9 @@ def build_server(
             means not configured; no tool argument can supply or override it.
         worker_policy_text: A construction-time seam to substitute the canonical
             worker policy (for tests). Never reachable from a tool call.
+        verifier_registry_text: The same seam for the canonical verifier registry.
+            Never reachable from a tool call, so no caller can widen the
+            execution allowlist.
         config: Validated configuration, or None when configuration failed.
         config_error: The failure that produced `config is None`, so the
             diagnostic tool can report it. Passing neither means the server
@@ -209,6 +215,47 @@ def build_server(
     def hiwaga_model_gate(task_class: TaskClass) -> ModelGateResult:
         try:
             return run_model_gate(task_class, identity or WorkerIdentity(), policy_text=worker_policy_text)
+        except HiwagaError as exc:
+            raise _refusal(exc) from exc
+
+    @server.tool(
+        name="hiwaga_verify",
+        title="HIWAGA verify",
+        description=(
+            "Execute one registered HIWAGA verification operation and report a typed result. "
+            "The caller selects only a registered verifier id and one of its declared modes; the "
+            "executable, arguments, working directory, timeout, environment, and proof class all "
+            "come from the canonical verifier registry, and no arbitrary command can be run. "
+            "Returns PASS, FAIL, TIMEOUT, or EXECUTION_ERROR as an ordinary result — a verifier "
+            "that finds a defect is a FAIL, not a tool error. Complete logs are written to an "
+            "ignored scratch run directory and only a bounded tail is returned. Independent of "
+            "preflight and the model gate, which it never calls."
+        ),
+    )
+    async def hiwaga_verify(
+        verifier: Annotated[str, Field(description="Registered verifier id.")],
+        mode: Annotated[
+            str | None,
+            Field(default=None, description="Declared mode; omitted uses the registry default."),
+        ] = None,
+    ) -> VerificationResult:
+        if config is None:
+            raise _refusal(
+                config_error
+                or ConfigurationError(
+                    f"{REPO_ROOT_ENV_VAR} is not configured for this server process.",
+                    details={"env_var": REPO_ROOT_ENV_VAR, "problem": "not_set"},
+                )
+            )
+        identity_report = validate_repository_identity(config.repo_root)
+        if identity_report.error is not None:
+            raise _refusal(
+                RepositoryIdentityError(identity_report.error.message, details=identity_report.error.details)
+            )
+        try:
+            return await run_verification(
+                config.repo_root, verifier, mode, registry_text=verifier_registry_text
+            )
         except HiwagaError as exc:
             raise _refusal(exc) from exc
 

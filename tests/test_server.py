@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "hiwaga_authority",
     "hiwaga_preflight",
     "hiwaga_model_gate",
+    "hiwaga_verify",
 }
 
 
@@ -49,7 +50,7 @@ def test_server_initializes_and_reports_its_identity(hiwaga_repo: Path) -> None:
 
 
 def test_tool_list_is_exactly_the_current_surface(hiwaga_repo: Path) -> None:
-    """Only diagnostics, project state, asset authority, and preflight are registered."""
+    """Only diagnostics, project state, authority, preflight, the model gate, and verify."""
     server = build_server(config=ServerConfig(repo_root=hiwaga_repo))
 
     async def body() -> None:
@@ -63,7 +64,6 @@ def test_tool_list_is_exactly_the_current_surface(hiwaga_repo: Path) -> None:
 def test_no_later_p0_tool_is_registered(hiwaga_repo: Path) -> None:
     deferred = {
         "hiwaga_context",
-        "hiwaga_verify",
     }
     server = build_server(config=ServerConfig(repo_root=hiwaga_repo))
 

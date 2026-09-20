@@ -43,6 +43,9 @@ def test_reason_codes_are_prefixed_and_stable() -> None:
         "HIWAGA_PROJECT_STATE_UNAVAILABLE",
         "HIWAGA_ASSET_AUTHORITY_INVALID",
         "HIWAGA_WORKER_POLICY_INVALID",
+        "HIWAGA_VERIFIER_REGISTRY_INVALID",
+        "HIWAGA_UNKNOWN_VERIFIER",
+        "HIWAGA_UNSUPPORTED_VERIFY_MODE",
     }
 
 

@@ -29,6 +29,9 @@ class ReasonCode(str, Enum):
     PROJECT_STATE_UNAVAILABLE = "HIWAGA_PROJECT_STATE_UNAVAILABLE"
     ASSET_AUTHORITY_INVALID = "HIWAGA_ASSET_AUTHORITY_INVALID"
     WORKER_POLICY_INVALID = "HIWAGA_WORKER_POLICY_INVALID"
+    VERIFIER_REGISTRY_INVALID = "HIWAGA_VERIFIER_REGISTRY_INVALID"
+    UNKNOWN_VERIFIER = "HIWAGA_UNKNOWN_VERIFIER"
+    UNSUPPORTED_VERIFY_MODE = "HIWAGA_UNSUPPORTED_VERIFY_MODE"
 
 
 class HiwagaError(Exception):
@@ -88,6 +91,28 @@ class WorkerPolicyError(HiwagaError):
     code = ReasonCode.WORKER_POLICY_INVALID
 
 
+class VerifierRegistryError(HiwagaError):
+    """The canonical verifier registry is missing, malformed, or untrustworthy.
+
+    A registry that cannot be fully trusted is never partially trusted: no
+    verifier from it may execute.
+    """
+
+    code = ReasonCode.VERIFIER_REGISTRY_INVALID
+
+
+class UnknownVerifierError(HiwagaError):
+    """The requested verifier id is not registered. An invalid request, not a result."""
+
+    code = ReasonCode.UNKNOWN_VERIFIER
+
+
+class UnsupportedVerifyModeError(HiwagaError):
+    """The requested mode is not declared by the selected verifier. An invalid request."""
+
+    code = ReasonCode.UNSUPPORTED_VERIFY_MODE
+
+
 __all__ = [
     "AssetAuthorityError",
     "ConfigurationError",
@@ -97,5 +122,8 @@ __all__ = [
     "ReasonCode",
     "RepositoryIdentityError",
     "TargetOutsideRepositoryError",
+    "UnknownVerifierError",
+    "UnsupportedVerifyModeError",
+    "VerifierRegistryError",
     "WorkerPolicyError",
 ]

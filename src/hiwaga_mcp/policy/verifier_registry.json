@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "verifiers": {
+    "asset_authority": {
+      "description": "Verify the Player V1/V2 asset-authority boundary: manifest fields, quarantined V1 sources, required READMEs, and prohibited V1 references under Player V2. Path and manifest checks only; it cannot prove mesh originality.",
+      "proof_class": "STRUCTURAL",
+      "executable": "REPO_PYTHON",
+      "script": "tools/verify_asset_authority.py",
+      "working_directory": ".",
+      "timeout_seconds": 120,
+      "default_mode": "default",
+      "modes": {
+        "default": {
+          "args": [],
+          "description": "The whole structural boundary check. Takes no arguments and writes nothing."
+        }
+      }
+    },
+    "player_v2_motion_review": {
+      "description": "Run the Player V2 deterministic motion-review capture suite headlessly through the repository's Godot runner. It observes the committed motion package and judges no visual quality.",
+      "proof_class": "HEADLESS",
+      "executable": "REPO_PYTHON",
+      "script": "tools/rgf/verify_player_v2_motion_review.py",
+      "working_directory": ".",
+      "timeout_seconds": 600,
+      "default_mode": "headless",
+      "modes": {
+        "headless": {
+          "args": ["headless", "--out", "{run_directory}"],
+          "description": "Headless capture suite. Results and the suite log are written to the run directory."
+        }
+      }
+    }
+  }
+}

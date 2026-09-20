@@ -13,9 +13,9 @@ See `AGENTS.md` for the repository engineering contract.
 
 ## Status
 
-This repository contains the **P0 bootstrap foundation** and four product tools,
-`hiwaga_project_state`, `hiwaga_authority`, `hiwaga_preflight`, and `hiwaga_model_gate`.
-The remaining planned tools are not implemented yet. See
+This repository contains the **P0 bootstrap foundation** and five product tools:
+`hiwaga_project_state`, `hiwaga_authority`, `hiwaga_preflight`, `hiwaga_model_gate`,
+and `hiwaga_verify`. `hiwaga_context` is not implemented yet. See
 [Scope](#scope) below for exactly what exists today.
 
 ## Requirements
@@ -99,7 +99,9 @@ ruff check .
 - Stable reason codes: `HIWAGA_CONFIGURATION_INVALID`,
   `HIWAGA_REPOSITORY_IDENTITY_INVALID`, `HIWAGA_TARGET_OUTSIDE_REPOSITORY`,
   `HIWAGA_PROGRESS_DOCUMENT_INVALID`, `HIWAGA_PROJECT_STATE_UNAVAILABLE`,
-  `HIWAGA_ASSET_AUTHORITY_INVALID`, `HIWAGA_WORKER_POLICY_INVALID`.
+  `HIWAGA_ASSET_AUTHORITY_INVALID`, `HIWAGA_WORKER_POLICY_INVALID`,
+  `HIWAGA_VERIFIER_REGISTRY_INVALID`, `HIWAGA_UNKNOWN_VERIFIER`,
+  `HIWAGA_UNSUPPORTED_VERIFY_MODE`.
 - Typed vocabularies for later work: `GateDecision`, `VerificationStatus`,
   `ProofClass`.
 - One bootstrap diagnostic tool, `hiwaga_server_info`, with typed structured output.
@@ -111,6 +113,8 @@ ruff check .
   permitted, from project state and asset authority (see below).
 - `hiwaga_model_gate`: whether the configured AI worker/model is permitted for a task
   class, from the canonical worker policy (see below).
+- `hiwaga_verify`: controlled execution of a registered verification operation, from
+  the canonical verifier registry (see below).
 
 `hiwaga_server_info` reports server name and version, the configured repository
 root, and the identity verdict for that root. It reports **no project state** and
@@ -306,29 +310,119 @@ worker/model, or a repeated worker or model. A valid policy that simply lacks a 
 The gate is independent of `hiwaga_preflight`, project state, and asset authority, and
 does not call them or the repository. A caller who wants both answers calls both.
 
+### `hiwaga_verify`
+
+Executes one registered verification operation and reports a typed result.
+
+Input is deliberately narrow:
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `verifier` | yes | A registered verifier id. |
+| `mode` | no | A mode that verifier declares. Omitted uses the registry's default mode. |
+
+There is **no arbitrary command execution.** The caller cannot supply a command,
+executable, script, working directory, timeout, environment, output path, or
+repository root — there is no argument for any of them, and unmodelled arguments
+are ignored. Everything that determines what runs comes from the canonical
+packaged registry at `src/hiwaga_mcp/policy/verifier_registry.json` and the
+validated `HIWAGA_REPO_ROOT`. The registry is the allowlist: a verifier that is
+not in it cannot be run through this tool at all.
+
+Registry definitions are never read from `AGENTS.md`, `README.md`, the progress
+ledger, or Codex/Claude configuration.
+
+Execution is argv-based via `asyncio.create_subprocess_exec`. No shell is
+involved anywhere — no `shell=True`, no `os.system`, no `sh -c` — and a registry
+entry that needed shell syntax would be invalid. Registry paths (script, working
+directory, run directory) pass the same containment boundary as every other path,
+so traversal, external absolute paths, and symlink escape are refused. The child
+runs in its own session with a built-from-scratch environment: an allowlist of
+`PATH`, `HOME`, `LANG`, `TZ`, and `LC_*`, plus any static entries the registry
+declares. `GIT_DIR`, `GIT_WORK_TREE`, `PYTHONPATH`, `PYTHONHOME`, and everything
+else never reach it.
+
+**Status meanings.** All four are ordinary results with `is_error: false`:
+
+| Status | Meaning |
+| --- | --- |
+| `PASS` | The verifier ran to completion and reported success (exit 0). |
+| `FAIL` | The verifier ran correctly and **found a defect** (nonzero exit). |
+| `TIMEOUT` | The verifier exceeded its registry deadline and was terminated. |
+| `EXECUTION_ERROR` | The verifier could not run, or died by signal before reporting. |
+
+A verifier `FAIL` is a verification result about HIWAGA, **not** a failure of
+this server — do not treat it as a tool error. `EXECUTION_ERROR` is the opposite
+case: execution itself broke, so nothing was established about what was checked.
+
+Tool errors (`is_error: true`, message led by a stable reason code) are reserved
+for invalid requests and untrustworthy configuration: `HIWAGA_UNKNOWN_VERIFIER`,
+`HIWAGA_UNSUPPORTED_VERIFY_MODE`, `HIWAGA_VERIFIER_REGISTRY_INVALID`,
+`HIWAGA_CONFIGURATION_INVALID`, `HIWAGA_REPOSITORY_IDENTITY_INVALID`, and
+`HIWAGA_TARGET_OUTSIDE_REPOSITORY`. A malformed registry is never partially
+trusted: no verifier from it runs.
+
+**Timeout.** Every registry entry carries an explicit positive timeout and the
+caller cannot override it. On expiry the whole process group gets `SIGTERM`, then
+`SIGKILL` after a short grace period, and the process is reaped — so a verifier
+that spawned Godot or other children does not leave them running.
+
+**Logs and run directory.** Each invocation gets `.hiwaga-mcp/runs/<run-id>/`
+with a random, filesystem-safe id. Complete `stdout.log` and `stderr.log` are
+written there; the result carries only a bounded 2000-character tail of each plus
+the full byte counts, so a verbose verifier cannot consume unbounded response
+tokens. `artifacts` lists what the verifier left in that run directory only — the
+repository is never scanned for modified files.
+
+**Proof class** comes from the registry, never the caller: a caller cannot claim
+a headless verifier produced native rendered evidence. No status asserts operator
+acceptance, and `limitations` says so explicitly.
+
+`hiwaga_verify` does **not** call `hiwaga_preflight` or `hiwaga_model_gate`. It
+owns safe execution, not development authorization; whether work may proceed and
+whether a worker is authorized are separate questions an external planner
+composes by calling those tools itself. There is no approval flag, no
+`unsafe`/`force` escape, and no preflight token.
+
+Seeded verifiers:
+
+| Verifier | Modes | Proof class | Timeout | Runs |
+| --- | --- | --- | --- | --- |
+| `asset_authority` | `default` | `STRUCTURAL` | 120s | `tools/verify_asset_authority.py` |
+| `player_v2_motion_review` | `headless` | `HEADLESS` | 600s | `tools/rgf/verify_player_v2_motion_review.py headless --out <run-dir>` |
+
+Both run under the checkout's own `.venv/bin/python` (`REPO_PYTHON`, the only
+executable strategy). The registry is the normalization layer for these entries
+only; historical `tools/rgf/verify_*.py` interfaces are not normalized, and
+further entries are added incrementally.
+
 ### Planned P0 tools — not implemented
 
 ```text
 hiwaga_context
-hiwaga_verify
 ```
 
 ### Deferred — not implemented
 
-Verifier registry and subprocess verifier execution, CANON routing, prose authority
-resolution or reconciliation with the machine registry, reasoning-effort and cost
-policy, client hook policy synchronization, evidence capture and packaging, Godot and
-Blender integration, GitHub integration, semantic search, embeddings, and any HTTP,
-OAuth, or remote transport.
+CANON routing, prose authority resolution or reconciliation with the machine
+registry, reasoning-effort and cost policy, client hook policy synchronization,
+evidence promotion and packaging, contact sheets and screenshot judgement, GitHub
+integration, semantic search, embeddings, background or queued verification runs,
+and any HTTP, OAuth, or remote transport.
 
-No verification or evidence capability exists in this repository yet, and asset
-authority covers the machine-readable registry only.
+Verification executes registered verifiers only. Nothing is promoted into
+`docs/evidence/`, and asset authority covers the machine-readable registry only.
 
 ## Runtime scratch state
 
-Runtime output belongs under the ignored `.hiwaga-mcp/` directory (`runs/`,
-`logs/`). Bootstrap does not create it; nothing is written there yet. Scratch
-results are never automatically promoted to tracked evidence.
+`hiwaga_verify` writes each run to `.hiwaga-mcp/runs/<run-id>/` inside the
+configured HIWAGA checkout: `stdout.log`, `stderr.log`, and whatever the verifier
+itself wrote there. Nothing else in the repository is written, and results are
+never automatically promoted into `docs/evidence/` — evidence promotion is a
+separate lifecycle that does not exist yet.
+
+**The target HIWAGA checkout should ignore `.hiwaga-mcp/`.** Add it to that
+repository's `.gitignore`; otherwise run directories show up as untracked files.
 
 ## Layout
 
@@ -346,9 +440,12 @@ src/hiwaga_mcp/
     ├── project_state.py   composes identity + ledger + Git into ProjectStateResult
     ├── authority.py       asset-authority manifest loading and path-ownership resolution
     ├── preflight.py       rule table combining project state and asset authority into a decision
-    └── model_gate.py      worker policy loading and the worker/model membership decision
+    ├── model_gate.py      worker policy loading and the worker/model membership decision
+    ├── verification_registry.py  registry loading, strict validation, verifier/mode lookup
+    └── verification.py    execution plan construction and controlled subprocess execution
 
-src/hiwaga_mcp/policy/worker_policy.json   canonical worker authorization policy (packaged)
+src/hiwaga_mcp/policy/worker_policy.json      canonical worker authorization policy (packaged)
+src/hiwaga_mcp/policy/verifier_registry.json  canonical verifier allowlist (packaged)
 ```
 
 MCP tool adapters stay thin; behaviour lives in services and is tested directly.
