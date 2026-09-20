@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "hiwaga_preflight",
     "hiwaga_model_gate",
     "hiwaga_verify",
+    "hiwaga_context",
 }
 
 
@@ -49,28 +50,14 @@ def test_server_initializes_and_reports_its_identity(hiwaga_repo: Path) -> None:
     _run(body)
 
 
-def test_tool_list_is_exactly_the_current_surface(hiwaga_repo: Path) -> None:
-    """Only diagnostics, project state, authority, preflight, the model gate, and verify."""
+def test_tool_list_is_exactly_the_planned_p0_surface(hiwaga_repo: Path) -> None:
+    """All seven originally planned P0 tools are registered, and nothing else."""
     server = build_server(config=ServerConfig(repo_root=hiwaga_repo))
 
     async def body() -> None:
         async with Client(server) as client:
             names = {tool.name for tool in (await client.list_tools()).tools}
             assert names == EXPECTED_TOOLS
-
-    _run(body)
-
-
-def test_no_later_p0_tool_is_registered(hiwaga_repo: Path) -> None:
-    deferred = {
-        "hiwaga_context",
-    }
-    server = build_server(config=ServerConfig(repo_root=hiwaga_repo))
-
-    async def body() -> None:
-        async with Client(server) as client:
-            names = {tool.name for tool in (await client.list_tools()).tools}
-            assert names.isdisjoint(deferred)
 
     _run(body)
 

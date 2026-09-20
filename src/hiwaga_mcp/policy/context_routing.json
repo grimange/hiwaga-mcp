@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "domains": {
+    "PROJECT": {},
+    "GAMEPLAY": {
+      "canonical": ["Game identity and gameplay design"],
+      "supporting": ["Campaign translation"]
+    },
+    "WORLD_LORE": {
+      "canonical": ["World and lore"]
+    },
+    "VISUAL_IDENTITY": {
+      "canonical": ["Visual identity"]
+    },
+    "VERTICAL_SLICE": {
+      "canonical": [
+        { "label": "Vertical slice", "section": "111. Vertical Slice Acceptance Gate" }
+      ],
+      "historical": ["Milestone evidence and ledger"]
+    },
+    "CORE_ARCHITECTURE": {
+      "supporting": ["Technical foundation reference", "Core architecture"]
+    },
+    "PROGRESSION": {
+      "supporting": ["Progression reference", "P1 prototype contract"]
+    },
+    "REPRESENTATIVE_GAMEPLAY": {
+      "supporting": [
+        "Representative gameplay foundation prototype contract",
+        "P2 Hunt observation prototype contract",
+        "Player V2 motion language",
+        "Player V2 animation timing authority",
+        "Player V2 motion acceptance matrix",
+        "Animation pose-lab contract",
+        "Representative player visual target",
+        "Representative environment form target"
+      ]
+    },
+    "ASSET_AUTHORITY": {
+      "supporting": ["Authored-asset status and reuse boundaries"]
+    },
+    "VERIFICATION": {
+      "supporting": ["Prototype evidence and playtest fidelity"],
+      "historical": ["Evidence & capture claim contract"]
+    }
+  }
+}

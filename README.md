@@ -13,9 +13,9 @@ See `AGENTS.md` for the repository engineering contract.
 
 ## Status
 
-This repository contains the **P0 bootstrap foundation** and five product tools:
-`hiwaga_project_state`, `hiwaga_authority`, `hiwaga_preflight`, `hiwaga_model_gate`,
-and `hiwaga_verify`. `hiwaga_context` is not implemented yet. See
+This repository contains the **P0 bootstrap foundation** and all six planned P0
+product tools: `hiwaga_project_state`, `hiwaga_context`, `hiwaga_authority`,
+`hiwaga_preflight`, `hiwaga_model_gate`, and `hiwaga_verify`. See
 [Scope](#scope) below for exactly what exists today.
 
 ## Requirements
@@ -101,12 +101,16 @@ ruff check .
   `HIWAGA_PROGRESS_DOCUMENT_INVALID`, `HIWAGA_PROJECT_STATE_UNAVAILABLE`,
   `HIWAGA_ASSET_AUTHORITY_INVALID`, `HIWAGA_WORKER_POLICY_INVALID`,
   `HIWAGA_VERIFIER_REGISTRY_INVALID`, `HIWAGA_UNKNOWN_VERIFIER`,
-  `HIWAGA_UNSUPPORTED_VERIFY_MODE`, `HIWAGA_RUNTIME_STATE_UNAVAILABLE`.
+  `HIWAGA_UNSUPPORTED_VERIFY_MODE`, `HIWAGA_RUNTIME_STATE_UNAVAILABLE`,
+  `HIWAGA_CONTEXT_ROUTING_INVALID`.
 - Typed vocabularies for later work: `GateDecision`, `VerificationStatus`,
   `ProofClass`.
 - One bootstrap diagnostic tool, `hiwaga_server_info`, with typed structured output.
 - `hiwaga_project_state`: the current deterministic development state of the
   configured HIWAGA repository (see below).
+- `hiwaga_context`: which repository sources currently govern or support one
+  explicit HIWAGA context domain, routed deterministically from `docs/CANON.md`
+  (see below).
 - `hiwaga_authority`: the asset authority that applies to a repository-relative
   target, from `art-source/ASSET_AUTHORITY.json` only (see below).
 - `hiwaga_preflight`: whether a structured operation on explicit targets is currently
@@ -157,6 +161,78 @@ error (`is_error`) whose text begins with the stable reason code:
 | ledger empty, unreadable, not UTF-8, or has no `##` block | `HIWAGA_PROGRESS_DOCUMENT_INVALID` |
 | ledger resolves outside the repository | `HIWAGA_TARGET_OUTSIDE_REPOSITORY` |
 | Git missing, not a repository, or HEAD has no commit | `HIWAGA_PROJECT_STATE_UNAVAILABLE` |
+
+### `hiwaga_context`
+
+Answers exactly one question: given one explicit `domain`, which repository
+sources does `docs/CANON.md` currently route for it? It is a routing interface,
+not a search engine, summarizer, or authority-inference tool.
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `domain` | yes | One of the ten closed `ContextDomain` values below. |
+
+```text
+PROJECT, GAMEPLAY, WORLD_LORE, VISUAL_IDENTITY, VERTICAL_SLICE,
+CORE_ARCHITECTURE, PROGRESSION, REPRESENTATIVE_GAMEPLAY, ASSET_AUTHORITY,
+VERIFICATION
+```
+
+There is no free-form query, target, search, detail-level, or history flag — the
+caller cannot ask for anything CANON does not already route, and an unknown or
+missing domain is a schema-validation tool error, never a fallback domain.
+
+**How routing works.** Two independent, deterministic parsers compose: a bounded
+grammar over `docs/CANON.md`'s three routing sections (`## Canonical sources`,
+`## Supporting references`, `## Exploratory Prototype A — frozen findings and
+history`), each parsed for `- Label: body` bullets and every Markdown link they
+contain in document order; and the packaged
+`src/hiwaga_mcp/policy/context_routing.json`, which holds the one fact CANON
+cannot supply on its own — which CANON bullet *labels* answer which domain. CANON
+remains the sole authority for paths, link titles, bullet text, and source
+ordering; the packaged mapping holds domain→label pairs only, nothing else.
+
+**Classification** (`CANONICAL`, `SUPPORTING`, `PROTOTYPE_A`) comes solely from
+which routing section a bullet lives in — never from that bullet's own status
+prose (`DIRECTIONAL`, `FOUNDATION`, provisional markers, and similar are
+preserved verbatim in `note` instead, not interpreted). `CURRENT_STATE` marks the
+one `PROJECT`-domain source that is the routing index itself, `docs/CANON.md`.
+Historical (`PROTOTYPE_A`) sources are always isolated in `historical_sources`
+and never contaminate `canonical_sources` or `supporting_sources`, even when the
+same underlying path is also routed elsewhere for a different role (a path
+appearing in two sections is returned once per role, never deduplicated).
+
+The result carries **routing metadata only** — `path`, `title` (CANON's own link
+text, verbatim), `label` (the CANON bullet label, verbatim), `classification`,
+`section` (an internal document section, only where routing authority names one,
+e.g. the Vertical Slice acceptance gate; `null` otherwise, with no excerpt),
+`note` (the complete CANON bullet text, verbatim), `exists`, and `size_bytes`
+(`null` for a directory or a missing path) — never a document body, excerpt,
+summary, or search result.
+
+`PROJECT` is the one special case: its canonical source is `docs/CANON.md`
+itself, and `project_state` is populated by calling the existing
+`hiwaga_project_state` service exactly once. Every other domain leaves
+`project_state` null and never touches that service — `hiwaga_context` does not
+infer which domain a progress-ledger update belongs to.
+
+`CORE_ARCHITECTURE`, `PROGRESSION`, `REPRESENTATIVE_GAMEPLAY`, and
+`ASSET_AUTHORITY` currently have no canonical source in CANON; that is a valid
+repository fact, reported as `canonical_sources: []` plus a limitation, never a
+tool error. `hiwaga_context` also never calls `hiwaga_authority`'s resolution
+service — it answers "which documents govern asset authority?", not "which
+registered authority applies to this path?" — and never calls
+`hiwaga_preflight`, `hiwaga_model_gate`, or a verifier. It performs no
+filesystem enumeration beyond containment-checking CANON's own routed links (for
+example, `WORLD_LORE` never scans `docs/lore/`; CANON's class rule for that
+material is reported as a limitation instead).
+
+Tool errors carry `HIWAGA_CONTEXT_ROUTING_INVALID` and fail closed: `docs/CANON.md`
+missing, unreadable, or not UTF-8; a required routing section missing, renamed,
+or duplicated; the packaged mapping malformed or structurally invalid; a mapped
+label no longer matching any CANON bullet (routing drift); or a `CANONICAL`
+source missing on disk. A missing `SUPPORTING` or `PROTOTYPE_A` source is never a
+tool error — it is reported as `exists: false` plus a limitation.
 
 ### `hiwaga_authority`
 
@@ -402,19 +478,14 @@ executable strategy). The registry is the normalization layer for these entries
 only; historical `tools/rgf/verify_*.py` interfaces are not normalized, and
 further entries are added incrementally.
 
-### Planned P0 tools — not implemented
-
-```text
-hiwaga_context
-```
-
 ### Deferred — not implemented
 
-CANON routing, prose authority resolution or reconciliation with the machine
-registry, reasoning-effort and cost policy, client hook policy synchronization,
-evidence promotion and packaging, contact sheets and screenshot judgement, GitHub
-integration, semantic search, embeddings, background or queued verification runs,
-and any HTTP, OAuth, or remote transport.
+Prose authority resolution or reconciliation with the machine registry,
+context-domain document excerpts/heading extraction/free-form query, semantic
+search, embeddings, reasoning-effort and cost policy, client hook policy
+synchronization, evidence promotion and packaging, contact sheets and screenshot
+judgement, GitHub integration, background or queued verification runs, and any
+HTTP, OAuth, or remote transport.
 
 Verification executes registered verifiers only. Nothing is promoted into
 `docs/evidence/`, and asset authority covers the machine-readable registry only.
@@ -463,12 +534,15 @@ src/hiwaga_mcp/
     ├── authority.py       asset-authority manifest loading and path-ownership resolution
     ├── preflight.py       rule table combining project state and asset authority into a decision
     ├── model_gate.py      worker policy loading and the worker/model membership decision
+    ├── context_routing.py CANON's bounded grammar and the packaged domain→label mapping parser
+    ├── context.py         composes CANON routing + the mapping + project state into ContextResult
     ├── verification_registry.py  registry loading, strict validation, verifier/mode lookup
     ├── verification.py    execution plan construction and controlled subprocess execution
     └── runtime_state.py   external XDG state root, per-repository namespace, run directory
 
 src/hiwaga_mcp/policy/worker_policy.json      canonical worker authorization policy (packaged)
 src/hiwaga_mcp/policy/verifier_registry.json  canonical verifier allowlist (packaged)
+src/hiwaga_mcp/policy/context_routing.json    canonical domain→CANON-label routing mapping (packaged)
 ```
 
 MCP tool adapters stay thin; behaviour lives in services and is tested directly.

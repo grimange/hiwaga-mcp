@@ -33,6 +33,7 @@ class ReasonCode(str, Enum):
     UNKNOWN_VERIFIER = "HIWAGA_UNKNOWN_VERIFIER"
     UNSUPPORTED_VERIFY_MODE = "HIWAGA_UNSUPPORTED_VERIFY_MODE"
     RUNTIME_STATE_UNAVAILABLE = "HIWAGA_RUNTIME_STATE_UNAVAILABLE"
+    CONTEXT_ROUTING_INVALID = "HIWAGA_CONTEXT_ROUTING_INVALID"
 
 
 class HiwagaError(Exception):
@@ -125,9 +126,22 @@ class RuntimeStateError(HiwagaError):
     code = ReasonCode.RUNTIME_STATE_UNAVAILABLE
 
 
+class ContextRoutingError(HiwagaError):
+    """CANON's routing structure, the packaged domain mapping, or a mapped source cannot be trusted.
+
+    Covers a missing/malformed/renamed CANON routing section, an invalid or
+    incomplete packaged domain→label mapping, a mapped label no longer present
+    in CANON (routing drift), and a missing `CANONICAL`-classified source.
+    Failing closed here means routing authority is never partially honoured.
+    """
+
+    code = ReasonCode.CONTEXT_ROUTING_INVALID
+
+
 __all__ = [
     "AssetAuthorityError",
     "ConfigurationError",
+    "ContextRoutingError",
     "HiwagaError",
     "ProgressDocumentError",
     "ProjectStateUnavailableError",

@@ -61,7 +61,6 @@ def test_verify_is_registered(verify_repo: Path) -> None:
         async with Client(server_for(verify_repo)) as client:
             names = {tool.name for tool in (await client.list_tools()).tools}
             assert "hiwaga_verify" in names
-            assert "hiwaga_context" not in names
 
     _run(body)
 

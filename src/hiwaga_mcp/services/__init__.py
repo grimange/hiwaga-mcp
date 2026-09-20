@@ -6,6 +6,13 @@ MCP tool adapters stay thin; behaviour lives here.
 from __future__ import annotations
 
 from hiwaga_mcp.services.authority import resolve_authority
+from hiwaga_mcp.services.context import get_context
+from hiwaga_mcp.services.context_routing import (
+    load_context_routing_mapping,
+    parse_canon_document,
+    parse_context_routing_mapping,
+    read_canon_document,
+)
 from hiwaga_mcp.services.project_state import get_project_state
 from hiwaga_mcp.services.repository import (
     REQUIRED_SENTINELS,
@@ -28,9 +35,14 @@ __all__ = [
     "REQUIRED_SENTINELS",
     "build_execution_plan",
     "execute_plan",
+    "get_context",
     "get_project_state",
+    "load_context_routing_mapping",
     "load_verifier_registry",
+    "parse_canon_document",
+    "parse_context_routing_mapping",
     "parse_verifier_registry",
+    "read_canon_document",
     "repository_state_key",
     "resolve_authority",
     "resolve_run_directory",

@@ -47,6 +47,7 @@ def test_reason_codes_are_prefixed_and_stable() -> None:
         "HIWAGA_UNKNOWN_VERIFIER",
         "HIWAGA_UNSUPPORTED_VERIFY_MODE",
         "HIWAGA_RUNTIME_STATE_UNAVAILABLE",
+        "HIWAGA_CONTEXT_ROUTING_INVALID",
     }
 
 

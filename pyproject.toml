@@ -35,3 +35,8 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# CANON routing bullets are single logical lines by grammar (see
+# services/context_routing.py); the fixture mirrors that shape verbatim.
+"tests/context_fixtures.py" = ["E501"]

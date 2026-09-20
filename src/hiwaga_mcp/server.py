@@ -26,12 +26,14 @@ from hiwaga_mcp.config import (
 from hiwaga_mcp.errors import ConfigurationError, HiwagaError, RepositoryIdentityError
 from hiwaga_mcp.models.authority import AuthorityResult
 from hiwaga_mcp.models.common import ErrorDetail
+from hiwaga_mcp.models.context import ContextDomain, ContextResult
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
 from hiwaga_mcp.models.model_gate import ModelGateResult, TaskClass
 from hiwaga_mcp.models.preflight import PreflightOperation, PreflightRequest, PreflightResult
 from hiwaga_mcp.models.state import ProjectStateResult
 from hiwaga_mcp.models.verification import VerificationResult
 from hiwaga_mcp.services.authority import resolve_authority
+from hiwaga_mcp.services.context import get_context
 from hiwaga_mcp.services.model_gate import run_model_gate
 from hiwaga_mcp.services.preflight import run_preflight
 from hiwaga_mcp.services.project_state import get_project_state
@@ -52,6 +54,7 @@ def build_server(
     identity: WorkerIdentity | None = None,
     worker_policy_text: str | None = None,
     verifier_registry_text: str | None = None,
+    context_routing_text: str | None = None,
 ) -> MCPServer:
     """Construct the MCP server.
 
@@ -63,6 +66,8 @@ def build_server(
         verifier_registry_text: The same seam for the canonical verifier registry.
             Never reachable from a tool call, so no caller can widen the
             execution allowlist.
+        context_routing_text: The same seam for the packaged domain→CANON-label
+            routing mapping. Never reachable from a tool call.
         config: Validated configuration, or None when configuration failed.
         config_error: The failure that produced `config is None`, so the
             diagnostic tool can report it. Passing neither means the server
@@ -257,6 +262,35 @@ def build_server(
             return await run_verification(
                 config.repo_root, verifier, mode, registry_text=verifier_registry_text
             )
+        except HiwagaError as exc:
+            raise _refusal(exc) from exc
+
+    @server.tool(
+        name="hiwaga_context",
+        title="HIWAGA context routing",
+        description=(
+            "Report which repository sources currently govern or support one explicit HIWAGA context "
+            "domain, routed deterministically from docs/CANON.md. Returns routing metadata only "
+            "(paths, CANON's own link titles/labels/status text, existence, size) — never document "
+            "bodies, excerpts, summaries, or search results. Sources are separated into canonical, "
+            "supporting, and historical (Exploratory Prototype A) groups; historical material never "
+            "counts as canonical or supporting. PROJECT additionally includes the full current "
+            "project state. Independent of hiwaga_authority, hiwaga_preflight, and hiwaga_model_gate, "
+            "which it never calls. Refuses with a stable reason code when CANON's routing structure "
+            "or the packaged domain mapping cannot be trusted."
+        ),
+    )
+    def hiwaga_context(domain: ContextDomain) -> ContextResult:
+        if config is None:
+            raise _refusal(
+                config_error
+                or ConfigurationError(
+                    f"{REPO_ROOT_ENV_VAR} is not configured for this server process.",
+                    details={"env_var": REPO_ROOT_ENV_VAR, "problem": "not_set"},
+                )
+            )
+        try:
+            return get_context(config.repo_root, domain, mapping_text=context_routing_text)
         except HiwagaError as exc:
             raise _refusal(exc) from exc
 

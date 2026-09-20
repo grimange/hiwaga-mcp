@@ -328,4 +328,8 @@ def test_packaging_declares_the_policy_as_package_data() -> None:
     section = table[1].split("\n[", 1)[0]
     assert re.search(r'hiwaga_mcp\s*=\s*\[[^\]]*"policy/\*\.json"', section)
     matched = sorted((REPO_ROOT / "src/hiwaga_mcp").glob("policy/*.json"))
-    assert [path.name for path in matched] == ["verifier_registry.json", "worker_policy.json"]
+    assert [path.name for path in matched] == [
+        "context_routing.json",
+        "verifier_registry.json",
+        "worker_policy.json",
+    ]

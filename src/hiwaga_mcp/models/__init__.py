@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from hiwaga_mcp.models.authority import AuthorityResolution, AuthorityResult, AuthorityUse
 from hiwaga_mcp.models.common import ErrorDetail
+from hiwaga_mcp.models.context import ContextDomain, ContextResult, ContextSource, SourceClassification
+from hiwaga_mcp.models.context_routing import ContextRoutingMapping, DomainRouting, LabelRef
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
 from hiwaga_mcp.models.gates import GateDecision
 from hiwaga_mcp.models.model_gate import (
@@ -49,7 +51,13 @@ __all__ = [
     "AuthorityResult",
     "AuthorityUse",
     "ConfigurationStatus",
+    "ContextDomain",
+    "ContextResult",
+    "ContextRoutingMapping",
+    "ContextSource",
+    "DomainRouting",
     "ErrorDetail",
+    "LabelRef",
     "GateDecision",
     "GitState",
     "MatchedRule",
@@ -67,6 +75,7 @@ __all__ = [
     "SentinelCheck",
     "SentinelKind",
     "ServerInfoResult",
+    "SourceClassification",
     "TargetPreflightResult",
     "TaskClass",
     "ExecutableStrategy",

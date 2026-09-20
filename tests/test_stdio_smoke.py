@@ -44,6 +44,7 @@ def test_module_entrypoint_serves_mcp_over_stdio(hiwaga_repo: Path) -> None:
                     "hiwaga_preflight",
                     "hiwaga_model_gate",
                     "hiwaga_verify",
+                    "hiwaga_context",
                 }
 
                 result = await client.call_tool("hiwaga_server_info", {})
@@ -250,3 +251,74 @@ def test_stdio_model_gate_denies_an_unauthorized_synthetic_worker() -> None:
         anyio.run(body)
     except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
         pytest.fail(f"stdio model-gate call did not complete in time: {exc}")
+
+
+def _context_launcher_parameters(repo_root: Path, mapping_file: Path) -> StdioServerParameters:
+    """The test launcher, with a fixture routing mapping substituted at construction."""
+    launcher = Path(__file__).resolve().parent / "stdio_context_server.py"
+    env = dict(os.environ)
+    env["HIWAGA_REPO_ROOT"] = str(repo_root)
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    env["PYTHONPATH"] = os.pathsep.join([src, env["PYTHONPATH"]]) if env.get("PYTHONPATH") else src
+    return StdioServerParameters(
+        command=sys.executable, args=[str(launcher), str(repo_root), str(mapping_file)], env=env
+    )
+
+
+def test_stdio_server_serves_context_for_representative_domains(context_repo: Path, tmp_path: Path) -> None:
+    """PROJECT, VERTICAL_SLICE, and REPRESENTATIVE_GAMEPLAY over a real stdio subprocess."""
+    from .conftest import context_routing_mapping_text, run_git
+
+    mapping_file = tmp_path / "context_routing.json"
+    mapping_file.write_text(context_routing_mapping_text(), encoding="utf-8")
+
+    before = run_git(context_repo, "status", "--porcelain=v1", "--untracked-files=all")
+
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_context_launcher_parameters(context_repo, mapping_file)) as client:
+                project = await client.call_tool("hiwaga_context", {"domain": "PROJECT"})
+                assert project.is_error is False
+                assert project.structured_content["canonical_sources"][0]["path"] == "docs/CANON.md"
+                assert project.structured_content["project_state"] is not None
+
+                slice_ = await client.call_tool("hiwaga_context", {"domain": "VERTICAL_SLICE"})
+                assert slice_.is_error is False
+                slice_payload = slice_.structured_content
+                canonical_paths = [s["path"] for s in slice_payload["canonical_sources"]]
+                historical_paths = [s["path"] for s in slice_payload["historical_sources"]]
+                assert "docs/evidence/fixture-vertical-slice" not in canonical_paths
+                assert "docs/evidence/fixture-vertical-slice" in historical_paths
+                assert slice_payload["canonical_sources"][0]["section"] == "42. Fixture Acceptance Gate"
+
+                rgf_domain = {"domain": "REPRESENTATIVE_GAMEPLAY"}
+                representative = await client.call_tool("hiwaga_context", rgf_domain)
+                assert representative.is_error is False
+                assert representative.structured_content["canonical_sources"] == []
+                assert len(representative.structured_content["supporting_sources"]) >= 1
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio context call did not complete in time: {exc}")
+
+    after = run_git(context_repo, "status", "--porcelain=v1", "--untracked-files=all")
+    assert before == after == ""
+
+
+def test_stdio_context_refuses_an_unknown_domain(context_repo: Path, tmp_path: Path) -> None:
+    from .conftest import context_routing_mapping_text
+
+    mapping_file = tmp_path / "context_routing.json"
+    mapping_file.write_text(context_routing_mapping_text(), encoding="utf-8")
+
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_context_launcher_parameters(context_repo, mapping_file)) as client:
+                result = await client.call_tool("hiwaga_context", {"domain": "PLAYER"})
+                assert result.is_error is True
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio context call did not complete in time: {exc}")

@@ -17,6 +17,13 @@ import pytest
 from hiwaga_mcp.models.project import SentinelKind
 from hiwaga_mcp.services.repository import REQUIRED_SENTINELS
 
+from .context_fixtures import (
+    FIXTURE_CANON_TEXT,
+    context_routing_mapping_text,
+    fixture_context_routing_mapping,
+    install_fixture_canon_links,
+    write_canon,
+)
 from .verifier_fixtures import (
     FIXTURE_VERIFIERS,
     fixture_registry,
@@ -26,11 +33,16 @@ from .verifier_fixtures import (
 )
 
 __all__ = [
+    "FIXTURE_CANON_TEXT",
     "FIXTURE_VERIFIERS",
+    "context_routing_mapping_text",
+    "fixture_context_routing_mapping",
     "fixture_registry",
+    "install_fixture_canon_links",
     "install_fixture_verifiers",
     "install_repo_python",
     "registry_text",
+    "write_canon",
 ]
 
 
@@ -260,4 +272,20 @@ def verify_repo(tmp_path: Path) -> Path:
     root = make_hiwaga_repo(tmp_path / "hiwaga")
     install_repo_python(root)
     install_fixture_verifiers(root)
+    return root
+
+
+@pytest.fixture
+def context_repo(tmp_path: Path) -> Path:
+    """A valid fixture checkout carrying `FIXTURE_CANON_TEXT`, the files it links to, a real
+    Git repo, and a valid progress block, so every domain including PROJECT can be routed.
+
+    Two links are deliberately left dangling (`FIXTURE_GHOST*`) to exercise
+    missing-supporting/missing-historical routing without a tool error.
+    """
+    root = make_hiwaga_repo(tmp_path / "hiwaga")
+    write_canon(root)
+    install_fixture_canon_links(root)
+    write_progress(root, VALID_PROGRESS)
+    init_git_repo(root)
     return root
