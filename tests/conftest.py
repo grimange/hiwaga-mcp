@@ -139,6 +139,40 @@ def authority_repo(tmp_path: Path) -> Path:
     return root
 
 
+def preflight_manifest() -> dict[str, Any]:
+    """`fixture_manifest()` plus assets that exercise conflict and status-only cases."""
+    manifest = fixture_manifest()
+    manifest["assets"]["legacy"] = {"status": "superseded", "source_path": "art-source/legacy"}
+    manifest["assets"]["dup_a"] = {"source_path": "art-source/dup"}
+    manifest["assets"]["dup_b"] = {"source_path": "art-source/dup"}
+    return manifest
+
+
+def progress_text(gate: str | None = None, *, operator: bool = False) -> str:
+    """A one-block ledger declaring an optional ambiguity gate and optional operator step."""
+    lines = ["## Preflight fixture block", ""]
+    if gate:
+        lines.append(f"- **Ambiguity Gate:** {gate}")
+    step = "operator runs the native review." if operator else "implement the next step."
+    lines.append(f"- **Next Bounded Step:** {step}")
+    return "\n".join(lines) + "\n"
+
+
+def set_project_state(root: Path, gate: str | None = None, *, operator: bool = False) -> None:
+    """Rewrite the ledger so `hiwaga_project_state` reports the given gate/operator state."""
+    write_progress(root, progress_text(gate, operator=operator))
+
+
+@pytest.fixture
+def preflight_repo(tmp_path: Path) -> Path:
+    """A fixture checkout with a real Git repo, a valid ledger (no gate, no operator step), and assets."""
+    root = make_hiwaga_repo(tmp_path / "hiwaga")
+    write_manifest(root, preflight_manifest())
+    set_project_state(root)
+    init_git_repo(root)
+    return root
+
+
 @pytest.fixture
 def state_repo(tmp_path: Path) -> Path:
     """A valid fixture HIWAGA checkout: real Git repo, clean, with a valid progress ledger."""

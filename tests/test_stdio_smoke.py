@@ -37,7 +37,12 @@ def test_module_entrypoint_serves_mcp_over_stdio(hiwaga_repo: Path) -> None:
                 assert info.name == "hiwaga-mcp"
 
                 names = {tool.name for tool in (await client.list_tools()).tools}
-                assert names == {"hiwaga_server_info", "hiwaga_project_state", "hiwaga_authority"}
+                assert names == {
+                    "hiwaga_server_info",
+                    "hiwaga_project_state",
+                    "hiwaga_authority",
+                    "hiwaga_preflight",
+                }
 
                 result = await client.call_tool("hiwaga_server_info", {})
                 assert result.is_error is False
@@ -115,3 +120,36 @@ def test_stdio_server_serves_authority(authority_repo: Path) -> None:
         anyio.run(body)
     except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
         pytest.fail(f"stdio authority call did not complete in time: {exc}")
+
+
+def test_stdio_server_serves_preflight(preflight_repo: Path) -> None:
+    """`hiwaga_preflight` works through a real subprocess: a DENY is a result, a bad request an error."""
+
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_server_parameters(preflight_repo)) as client:
+                denied = await client.call_tool(
+                    "hiwaga_preflight",
+                    {
+                        "operation": "DERIVE_AUTHORED_ASSET",
+                        "targets": ["art-source/_superseded/old_thing/x.blend"],
+                    },
+                )
+                assert denied.is_error is False
+                assert denied.structured_content["decision"] == "DENY"
+
+                allowed = await client.call_tool(
+                    "hiwaga_preflight", {"operation": "MODIFY_CODE", "targets": ["src/x.py"]}
+                )
+                assert allowed.is_error is False
+                assert allowed.structured_content["decision"] == "ALLOW"
+
+                refused = await client.call_tool(
+                    "hiwaga_preflight", {"operation": "READ_REFERENCE", "targets": ["../x"]}
+                )
+                assert refused.is_error is True
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio preflight call did not complete in time: {exc}")

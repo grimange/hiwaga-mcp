@@ -6,6 +6,14 @@ from hiwaga_mcp.models.authority import AuthorityResolution, AuthorityResult, Au
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
 from hiwaga_mcp.models.gates import GateDecision
+from hiwaga_mcp.models.preflight import (
+    PreflightOperation,
+    PreflightReasonCode,
+    PreflightRequest,
+    PreflightResult,
+    ProjectStateSummary,
+    TargetPreflightResult,
+)
 from hiwaga_mcp.models.project import (
     RepositoryIdentityReport,
     RepositoryIdentityStatus,
@@ -24,12 +32,18 @@ __all__ = [
     "ErrorDetail",
     "GateDecision",
     "GitState",
+    "PreflightOperation",
+    "PreflightReasonCode",
+    "PreflightRequest",
+    "PreflightResult",
     "ProjectStateResult",
+    "ProjectStateSummary",
     "ProofClass",
     "RepositoryIdentityReport",
     "RepositoryIdentityStatus",
     "SentinelCheck",
     "SentinelKind",
     "ServerInfoResult",
+    "TargetPreflightResult",
     "VerificationStatus",
 ]

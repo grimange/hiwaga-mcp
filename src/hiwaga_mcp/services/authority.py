@@ -236,14 +236,16 @@ def derive_uses(entry: AssetAuthorityEntry) -> tuple[list[AuthorityUse], list[Au
     return [u for u in order if u in allowed], [u for u in order if u in forbidden]
 
 
-def _match_assets(root: Path, manifest: AssetAuthorityManifest, target: Path) -> list[str]:
-    """Sorted ids of every asset owning `target`. Validates every entry, matched or not."""
-    matched = [
-        asset_id
-        for asset_id, entry in manifest.assets.items()
-        if any(_owns(declared, target) for declared in _asset_paths(root, asset_id, entry))
-    ]
-    return sorted(matched)
+def _declared_paths(root: Path, manifest: AssetAuthorityManifest) -> dict[str, list[Path]]:
+    """Canonical declared paths per asset. Validates every entry, so a bad one refuses all."""
+    return {asset_id: _asset_paths(root, asset_id, entry) for asset_id, entry in manifest.assets.items()}
+
+
+def _match_assets(declared: dict[str, list[Path]], target: Path) -> list[str]:
+    """Sorted ids of every asset owning `target`."""
+    return sorted(
+        asset_id for asset_id, paths in declared.items() if any(_owns(path, target) for path in paths)
+    )
 
 
 def _result(
@@ -279,6 +281,59 @@ def _result(
     )
 
 
+def resolve_authorities(repo_root: Path, targets: Sequence[str]) -> list[AuthorityResult]:
+    """Resolve asset authority for each of `targets`, in order, from one manifest load.
+
+    Identity is checked, every target is contained, the manifest is loaded and
+    validated, and declared paths are canonicalized once; each target is then
+    matched independently. Any failure refuses the whole batch.
+
+    Raises:
+        RepositoryIdentityError: `repo_root` is not a valid HIWAGA checkout.
+        TargetOutsideRepositoryError: a target (or the manifest) escapes the repository.
+        AssetAuthorityError: the manifest is missing or cannot be trusted.
+    """
+    root = require_valid_repository(repo_root)
+    resolved_targets = [resolve_within_repository(root, target) for target in targets]
+    manifest = load_asset_manifest(root)
+    declared = _declared_paths(root, manifest)
+
+    results: list[AuthorityResult] = []
+    for target, resolved in zip(targets, resolved_targets, strict=True):
+        matched = _match_assets(declared, resolved)
+        if not matched:
+            results.append(
+                _result(
+                    root,
+                    target,
+                    resolved,
+                    AuthorityResolution.UNRESOLVED,
+                    matched,
+                    None,
+                    ["No asset in the manifest declares a path that owns this target."],
+                )
+            )
+        elif len(matched) > 1:
+            results.append(
+                _result(
+                    root,
+                    target,
+                    resolved,
+                    AuthorityResolution.CONFLICT,
+                    matched,
+                    None,
+                    [
+                        f"Multiple assets own this target ({', '.join(matched)}); no owner is chosen "
+                        "and no authority fields are reported."
+                    ],
+                )
+            )
+        else:
+            entry = manifest.assets[matched[0]]
+            results.append(_result(root, target, resolved, AuthorityResolution.RESOLVED, matched, entry, []))
+    return results
+
+
 def resolve_authority(repo_root: Path, target: str) -> AuthorityResult:
     """Resolve the asset authority that applies to `target` in `repo_root`.
 
@@ -291,36 +346,7 @@ def resolve_authority(repo_root: Path, target: str) -> AuthorityResult:
         TargetOutsideRepositoryError: `target` (or the manifest) escapes the repository.
         AssetAuthorityError: the manifest is missing or cannot be trusted.
     """
-    root = require_valid_repository(repo_root)
-    resolved = resolve_within_repository(root, target)
-    manifest = load_asset_manifest(root)
-    matched = _match_assets(root, manifest, resolved)
-
-    if not matched:
-        return _result(
-            root,
-            target,
-            resolved,
-            AuthorityResolution.UNRESOLVED,
-            matched,
-            None,
-            ["No asset in the manifest declares a path that owns this target."],
-        )
-    if len(matched) > 1:
-        return _result(
-            root,
-            target,
-            resolved,
-            AuthorityResolution.CONFLICT,
-            matched,
-            None,
-            [
-                f"Multiple assets own this target ({', '.join(matched)}); no owner is chosen and no "
-                "authority fields are reported."
-            ],
-        )
-    entry = manifest.assets[matched[0]]
-    return _result(root, target, resolved, AuthorityResolution.RESOLVED, matched, entry, [])
+    return resolve_authorities(repo_root, [target])[0]
 
 
 __all__ = [
@@ -329,5 +355,6 @@ __all__ = [
     "derive_uses",
     "load_asset_manifest",
     "parse_manifest",
+    "resolve_authorities",
     "resolve_authority",
 ]

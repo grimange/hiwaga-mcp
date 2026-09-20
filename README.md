@@ -13,8 +13,8 @@ See `AGENTS.md` for the repository engineering contract.
 
 ## Status
 
-This repository contains the **P0 bootstrap foundation** and two product tools,
-`hiwaga_project_state` and `hiwaga_authority`. The remaining planned tools are not implemented yet. See
+This repository contains the **P0 bootstrap foundation** and three product tools,
+`hiwaga_project_state`, `hiwaga_authority`, and `hiwaga_preflight`. The remaining planned tools are not implemented yet. See
 [Scope](#scope) below for exactly what exists today.
 
 ## Requirements
@@ -104,6 +104,8 @@ ruff check .
   configured HIWAGA repository (see below).
 - `hiwaga_authority`: the asset authority that applies to a repository-relative
   target, from `art-source/ASSET_AUTHORITY.json` only (see below).
+- `hiwaga_preflight`: whether a structured operation on explicit targets is currently
+  permitted, from project state and asset authority (see below).
 
 `hiwaga_server_info` reports server name and version, the configured repository
 root, and the identity verdict for that root. It reports **no project state** and
@@ -194,11 +196,62 @@ entry, or an unusable declared path (`HIWAGA_ASSET_AUTHORITY_INVALID`). The whol
 manifest is validated on every call, so no partial authority is returned from an
 untrustworthy one.
 
+### `hiwaga_preflight`
+
+Input: `operation` (a closed enum) and `targets` (a non-empty list of
+repository-relative paths). The caller states the operation; nothing is inferred from
+natural language. The repository is always the configured `HIWAGA_REPO_ROOT`.
+
+| `operation` | Meaning |
+| --- | --- |
+| `READ_REFERENCE` | inspect a target without modifying it |
+| `MODIFY_CODE` | change ordinary source, tests, or documentation |
+| `MODIFY_AUTHORED_ASSET` | change an existing authored asset as the authoring base |
+| `DERIVE_AUTHORED_ASSET` | create or change authored work by deriving from a target |
+| `CREATE_AUTHORED_ASSET_FROM_SCRATCH` | create authored work under a target that declares `creation_mode: from_scratch` |
+| `RUN_VERIFICATION` | run verification against a target (preflight authorizes the intent only) |
+| `OPERATOR_REVIEW` | a human/operator review step |
+
+`decision` is `ALLOW`, `DENY`, `AMBIGUITY`, or `HUMAN_REQUIRED`, with a stable
+`reason_code` (`HIWAGA_PREFLIGHT_*`), a `reason`, a `project_state_summary`, and a
+per-target result (authority resolution, derived uses, and that target's decision).
+Precedence, highest first:
+
+1. Project gate `TARGET_AMBIGUOUS` gives `AMBIGUITY` for every operation.
+2. `operator_required` in project state gives `HUMAN_REQUIRED` for the mutating
+   operations (`MODIFY_CODE`, `MODIFY_AUTHORED_ASSET`, `DERIVE_AUTHORED_ASSET`,
+   `CREATE_AUTHORED_ASSET_FROM_SCRATCH`). `READ_REFERENCE`, `RUN_VERIFICATION`, and
+   `OPERATOR_REVIEW` are not blocked.
+3. Per-target authority rules:
+   - the three authored operations need exactly one resolved authority: `UNRESOLVED` or
+     `CONFLICT` gives `AMBIGUITY`;
+   - `MODIFY_AUTHORED_ASSET` and `DERIVE_AUTHORED_ASSET` are `DENY` when the authority
+     forbids `AUTHORING_DERIVATION` (`reference_only`), otherwise `ALLOW`; `status`
+     alone never denies;
+   - `CREATE_AUTHORED_ASSET_FROM_SCRATCH` is `ALLOW` when `creation_mode` is
+     `from_scratch`, otherwise `AMBIGUITY`;
+   - `MODIFY_CODE` is `ALLOW` for a target with no asset authority, and `AMBIGUITY` for
+     an asset-governed target, so it cannot bypass authored-asset policy;
+   - `READ_REFERENCE`, `RUN_VERIFICATION`, and `OPERATOR_REVIEW` are not blocked by
+     authority (a conflict adds a limitation).
+4. Targets aggregate as `AMBIGUITY` > `HUMAN_REQUIRED` > `DENY` > `ALLOW`, independent
+   of target order.
+
+`TARGET_CLEAR` never overrides the rules above, `TARGET_PARTIALLY_CONSTRAINED` is not a
+stop, and an undeclared gate is treated as neither clear nor ambiguous.
+
+`ALLOW`, `DENY`, `AMBIGUITY`, and `HUMAN_REQUIRED` are all ordinary results
+(`is_error` false). A tool error is reserved for an invalid request (unknown operation,
+empty `targets`) or a failed prerequisite: configuration, repository identity, project
+state, a target outside the repository, or an untrustworthy authority manifest.
+
+Preflight is advisory and decision-only. It executes nothing, and choosing a worker or
+model is not part of it.
+
 ### Planned P0 tools — not implemented
 
 ```text
 hiwaga_context
-hiwaga_preflight
 hiwaga_model_gate
 hiwaga_verify
 ```
@@ -234,7 +287,8 @@ src/hiwaga_mcp/
     ├── git_state.py       read-only Git branch/HEAD/worktree facts
     ├── progress.py        current-block parser for the progress ledger
     ├── project_state.py   composes identity + ledger + Git into ProjectStateResult
-    └── authority.py       asset-authority manifest loading and path-ownership resolution
+    ├── authority.py       asset-authority manifest loading and path-ownership resolution
+    └── preflight.py       rule table combining project state and asset authority into a decision
 ```
 
 MCP tool adapters stay thin; behaviour lives in services and is tested directly.

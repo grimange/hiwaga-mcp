@@ -9,9 +9,11 @@ Transport for P0 is stdio only.
 from __future__ import annotations
 
 import logging
+from typing import Annotated
 
 from mcp.server import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
+from pydantic import Field
 
 from hiwaga_mcp import SERVER_NAME, SERVER_TITLE, __version__
 from hiwaga_mcp.config import REPO_ROOT_ENV_VAR, ServerConfig, load_config
@@ -19,8 +21,10 @@ from hiwaga_mcp.errors import ConfigurationError, HiwagaError
 from hiwaga_mcp.models.authority import AuthorityResult
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
+from hiwaga_mcp.models.preflight import PreflightOperation, PreflightRequest, PreflightResult
 from hiwaga_mcp.models.state import ProjectStateResult
 from hiwaga_mcp.services.authority import resolve_authority
+from hiwaga_mcp.services.preflight import run_preflight
 from hiwaga_mcp.services.project_state import get_project_state
 from hiwaga_mcp.services.repository import validate_repository_identity
 
@@ -143,6 +147,36 @@ def build_server(
             )
         try:
             return resolve_authority(config.repo_root, target)
+        except HiwagaError as exc:
+            raise _refusal(exc) from exc
+
+    @server.tool(
+        name="hiwaga_preflight",
+        title="HIWAGA preflight",
+        description=(
+            "Decide whether a structured operation on repository-relative targets is currently "
+            "permitted, from the current project state and asset authority. Returns ALLOW, DENY, "
+            "AMBIGUITY, or HUMAN_REQUIRED as an ordinary result with per-target evidence; it "
+            "executes nothing and selects no worker or model. The repository is always the "
+            "configured HIWAGA_REPO_ROOT. Refuses with a stable reason code only when a "
+            "prerequisite fails (configuration, identity, project state, a target outside the "
+            "repository, or an untrustworthy authority manifest)."
+        ),
+    )
+    def hiwaga_preflight(
+        operation: PreflightOperation,
+        targets: Annotated[list[str], Field(min_length=1)],
+    ) -> PreflightResult:
+        if config is None:
+            raise _refusal(
+                config_error
+                or ConfigurationError(
+                    f"{REPO_ROOT_ENV_VAR} is not configured for this server process.",
+                    details={"env_var": REPO_ROOT_ENV_VAR, "problem": "not_set"},
+                )
+            )
+        try:
+            return run_preflight(config.repo_root, PreflightRequest(operation=operation, targets=targets))
         except HiwagaError as exc:
             raise _refusal(exc) from exc
 
