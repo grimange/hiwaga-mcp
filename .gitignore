@@ -1,0 +1,13 @@
+# Godot editor/import/cache data generated locally.
+.venv
+.idea/
+
+# hiwaga-mcp runtime scratch state (runs/, logs/); never tracked evidence.
+.hiwaga-mcp/
+
+# Python build and test artifacts.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
