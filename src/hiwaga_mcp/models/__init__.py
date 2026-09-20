@@ -6,6 +6,12 @@ from hiwaga_mcp.models.authority import AuthorityResolution, AuthorityResult, Au
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
 from hiwaga_mcp.models.gates import GateDecision
+from hiwaga_mcp.models.model_gate import (
+    MatchedRule,
+    ModelGateReasonCode,
+    ModelGateResult,
+    TaskClass,
+)
 from hiwaga_mcp.models.preflight import (
     PreflightOperation,
     PreflightReasonCode,
@@ -32,6 +38,9 @@ __all__ = [
     "ErrorDetail",
     "GateDecision",
     "GitState",
+    "MatchedRule",
+    "ModelGateReasonCode",
+    "ModelGateResult",
     "PreflightOperation",
     "PreflightReasonCode",
     "PreflightRequest",
@@ -45,5 +54,6 @@ __all__ = [
     "SentinelKind",
     "ServerInfoResult",
     "TargetPreflightResult",
+    "TaskClass",
     "VerificationStatus",
 ]

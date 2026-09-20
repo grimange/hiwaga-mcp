@@ -20,7 +20,13 @@ from hiwaga_mcp.server import build_server, create_server_from_environment
 
 from .conftest import make_hiwaga_repo
 
-EXPECTED_TOOLS = {"hiwaga_server_info", "hiwaga_project_state", "hiwaga_authority", "hiwaga_preflight"}
+EXPECTED_TOOLS = {
+    "hiwaga_server_info",
+    "hiwaga_project_state",
+    "hiwaga_authority",
+    "hiwaga_preflight",
+    "hiwaga_model_gate",
+}
 
 
 def _run(async_fn: Any) -> Any:
@@ -57,7 +63,6 @@ def test_tool_list_is_exactly_the_current_surface(hiwaga_repo: Path) -> None:
 def test_no_later_p0_tool_is_registered(hiwaga_repo: Path) -> None:
     deferred = {
         "hiwaga_context",
-        "hiwaga_model_gate",
         "hiwaga_verify",
     }
     server = build_server(config=ServerConfig(repo_root=hiwaga_repo))

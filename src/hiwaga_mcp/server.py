@@ -16,14 +16,22 @@ from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
 
 from hiwaga_mcp import SERVER_NAME, SERVER_TITLE, __version__
-from hiwaga_mcp.config import REPO_ROOT_ENV_VAR, ServerConfig, load_config
+from hiwaga_mcp.config import (
+    REPO_ROOT_ENV_VAR,
+    ServerConfig,
+    WorkerIdentity,
+    load_config,
+    load_worker_identity,
+)
 from hiwaga_mcp.errors import ConfigurationError, HiwagaError
 from hiwaga_mcp.models.authority import AuthorityResult
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
+from hiwaga_mcp.models.model_gate import ModelGateResult, TaskClass
 from hiwaga_mcp.models.preflight import PreflightOperation, PreflightRequest, PreflightResult
 from hiwaga_mcp.models.state import ProjectStateResult
 from hiwaga_mcp.services.authority import resolve_authority
+from hiwaga_mcp.services.model_gate import run_model_gate
 from hiwaga_mcp.services.preflight import run_preflight
 from hiwaga_mcp.services.project_state import get_project_state
 from hiwaga_mcp.services.repository import validate_repository_identity
@@ -39,10 +47,16 @@ def _refusal(error: HiwagaError) -> ToolError:
 def build_server(
     config: ServerConfig | None = None,
     config_error: ConfigurationError | None = None,
+    identity: WorkerIdentity | None = None,
+    worker_policy_text: str | None = None,
 ) -> MCPServer:
     """Construct the MCP server.
 
     Args:
+        identity: The trusted worker/model identity for `hiwaga_model_gate`. None
+            means not configured; no tool argument can supply or override it.
+        worker_policy_text: A construction-time seam to substitute the canonical
+            worker policy (for tests). Never reachable from a tool call.
         config: Validated configuration, or None when configuration failed.
         config_error: The failure that produced `config is None`, so the
             diagnostic tool can report it. Passing neither means the server
@@ -180,6 +194,24 @@ def build_server(
         except HiwagaError as exc:
             raise _refusal(exc) from exc
 
+    @server.tool(
+        name="hiwaga_model_gate",
+        title="HIWAGA model gate",
+        description=(
+            "Decide whether the AI worker/model this server process is configured with "
+            "(HIWAGA_AI_WORKER / HIWAGA_AI_MODEL) is permitted for the supplied task class, from the "
+            "canonical worker policy. The only input is the task class; identity cannot be supplied or "
+            "overridden by the caller. Returns ALLOW, DENY, AMBIGUITY (undefined policy or unconfigured "
+            "identity), or HUMAN_REQUIRED as an ordinary result. Independent of the repository, project "
+            "state, and preflight. Refuses with a stable reason code only when the policy itself is invalid."
+        ),
+    )
+    def hiwaga_model_gate(task_class: TaskClass) -> ModelGateResult:
+        try:
+            return run_model_gate(task_class, identity or WorkerIdentity(), policy_text=worker_policy_text)
+        except HiwagaError as exc:
+            raise _refusal(exc) from exc
+
     return server
 
 
@@ -189,11 +221,12 @@ def create_server_from_environment() -> MCPServer:
     Configuration failure is logged to stderr and surfaced through
     `hiwaga_server_info` rather than aborting startup.
     """
+    identity = load_worker_identity()
     try:
-        return build_server(config=load_config())
+        return build_server(config=load_config(), identity=identity)
     except ConfigurationError as exc:
         logger.warning("%s: %s", exc.code.value, exc.message)
-        return build_server(config=None, config_error=exc)
+        return build_server(config=None, config_error=exc, identity=identity)
 
 
 def main() -> None:

@@ -139,6 +139,28 @@ def authority_repo(tmp_path: Path) -> Path:
     return root
 
 
+def fixture_worker_policy() -> dict[str, Any]:
+    """A fresh minimal worker policy: single-worker, multi-worker, and human-only classes."""
+    return {
+        "schema_version": 1,
+        "task_classes": {
+            "BOUNDED_IMPLEMENTATION": {"allowed": [{"worker": "codex", "models": ["model-A"]}]},
+            "EVIDENCE_AUDIT": {
+                "allowed": [
+                    {"worker": "codex", "models": ["model-A", "model-B"]},
+                    {"worker": "claude-code", "models": ["model-C"]},
+                ]
+            },
+            "OPERATOR_REVIEW": {"human_required": True},
+        },
+    }
+
+
+def worker_policy_text(policy: dict[str, Any] | None = None) -> str:
+    """Serialize `policy` (default: the fixture policy) as policy-file text."""
+    return json.dumps(fixture_worker_policy() if policy is None else policy, indent=2)
+
+
 def preflight_manifest() -> dict[str, Any]:
     """`fixture_manifest()` plus assets that exercise conflict and status-only cases."""
     manifest = fixture_manifest()

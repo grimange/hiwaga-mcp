@@ -42,6 +42,7 @@ def test_reason_codes_are_prefixed_and_stable() -> None:
         "HIWAGA_PROGRESS_DOCUMENT_INVALID",
         "HIWAGA_PROJECT_STATE_UNAVAILABLE",
         "HIWAGA_ASSET_AUTHORITY_INVALID",
+        "HIWAGA_WORKER_POLICY_INVALID",
     }
 
 

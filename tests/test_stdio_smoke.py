@@ -42,6 +42,7 @@ def test_module_entrypoint_serves_mcp_over_stdio(hiwaga_repo: Path) -> None:
                     "hiwaga_project_state",
                     "hiwaga_authority",
                     "hiwaga_preflight",
+                    "hiwaga_model_gate",
                 }
 
                 result = await client.call_tool("hiwaga_server_info", {})
@@ -153,3 +154,98 @@ def test_stdio_server_serves_preflight(preflight_repo: Path) -> None:
         anyio.run(body)
     except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
         pytest.fail(f"stdio preflight call did not complete in time: {exc}")
+
+
+def _gate_parameters(worker: str | None, model: str | None, repo_root: Path | None) -> StdioServerParameters:
+    """A real server process with an explicit (synthetic) identity; ambient identity is removed."""
+    env = dict(os.environ)
+    for name in ("HIWAGA_AI_WORKER", "HIWAGA_AI_MODEL", "HIWAGA_REPO_ROOT"):
+        env.pop(name, None)
+    if worker is not None:
+        env["HIWAGA_AI_WORKER"] = worker
+    if model is not None:
+        env["HIWAGA_AI_MODEL"] = model
+    if repo_root is not None:
+        env["HIWAGA_REPO_ROOT"] = str(repo_root)
+    src = str(Path(__file__).resolve().parents[1] / "src")
+    env["PYTHONPATH"] = os.pathsep.join([src, env["PYTHONPATH"]]) if env.get("PYTHONPATH") else src
+    return StdioServerParameters(command=sys.executable, args=["-m", "hiwaga_mcp"], env=env)
+
+
+def test_stdio_server_serves_model_gate_with_an_explicit_synthetic_identity(hiwaga_repo: Path) -> None:
+    """Synthetic test identity codex / gpt-5.6-luna: a real process, real env, packaged policy."""
+
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_gate_parameters("codex", "gpt-5.6-luna", hiwaga_repo)) as client:
+                bounded = {"task_class": "BOUNDED_IMPLEMENTATION"}
+                allowed = await client.call_tool("hiwaga_model_gate", bounded)
+                assert allowed.is_error is False
+                assert allowed.structured_content["decision"] == "ALLOW"
+                assert allowed.structured_content["worker"] == "codex"
+                assert allowed.structured_content["model"] == "gpt-5.6-luna"
+
+                denied = await client.call_tool("hiwaga_model_gate", {"task_class": "EVIDENCE_AUDIT"})
+                assert denied.is_error is False
+                assert denied.structured_content["reason_code"] == "HIWAGA_MODEL_GATE_MODEL_DENIED"
+
+                human = await client.call_tool("hiwaga_model_gate", {"task_class": "OPERATOR_REVIEW"})
+                assert human.is_error is False
+                assert human.structured_content["decision"] == "HUMAN_REQUIRED"
+
+                undefined = await client.call_tool("hiwaga_model_gate", {"task_class": "BUG_DIAGNOSIS"})
+                assert undefined.is_error is False
+                assert undefined.structured_content["decision"] == "AMBIGUITY"
+
+                override = await client.call_tool(
+                    "hiwaga_model_gate",
+                    {"task_class": "EXECUTION_BOUNDARY_CHANGE", "worker": "codex", "model": "gpt-5.6-sol"},
+                )
+                assert override.structured_content["reason_code"] == "HIWAGA_MODEL_GATE_MODEL_DENIED"
+                # The reported model is the process identity, not the argument.
+                assert override.structured_content["model"] == "gpt-5.6-luna"
+
+                refused = await client.call_tool("hiwaga_model_gate", {"task_class": "NOT_A_CLASS"})
+                assert refused.is_error is True
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio model-gate call did not complete in time: {exc}")
+
+
+def test_stdio_model_gate_without_identity_or_repository_is_ambiguity_not_a_crash() -> None:
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_gate_parameters(None, None, None)) as client:
+                bounded = {"task_class": "BOUNDED_IMPLEMENTATION"}
+                ambiguous = await client.call_tool("hiwaga_model_gate", bounded)
+                assert ambiguous.is_error is False
+                assert ambiguous.structured_content["reason_code"] == "HIWAGA_MODEL_GATE_IDENTITY_UNAVAILABLE"
+
+                human = await client.call_tool("hiwaga_model_gate", {"task_class": "OPERATOR_REVIEW"})
+                assert human.structured_content["decision"] == "HUMAN_REQUIRED"
+
+                info = await client.call_tool("hiwaga_server_info", {})
+                assert info.is_error is False
+                assert info.structured_content["configuration_status"] == "INVALID"
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio model-gate call did not complete in time: {exc}")
+
+
+def test_stdio_model_gate_denies_an_unauthorized_synthetic_worker() -> None:
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_gate_parameters("claude-code", "some-model", None)) as client:
+                result = await client.call_tool("hiwaga_model_gate", {"task_class": "BOUNDED_IMPLEMENTATION"})
+                assert result.is_error is False
+                assert result.structured_content["decision"] == "DENY"
+                assert result.structured_content["reason_code"] == "HIWAGA_MODEL_GATE_WORKER_DENIED"
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio model-gate call did not complete in time: {exc}")

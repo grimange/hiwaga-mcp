@@ -15,6 +15,8 @@ from pathlib import Path
 from hiwaga_mcp.errors import ConfigurationError
 
 REPO_ROOT_ENV_VAR = "HIWAGA_REPO_ROOT"
+WORKER_ENV_VAR = "HIWAGA_AI_WORKER"
+MODEL_ENV_VAR = "HIWAGA_AI_MODEL"
 
 
 @dataclass(frozen=True)
@@ -89,4 +91,34 @@ def load_config(env: Mapping[str, str] | None = None) -> ServerConfig:
     return ServerConfig(repo_root=resolved)
 
 
-__all__ = ["REPO_ROOT_ENV_VAR", "ServerConfig", "load_config"]
+@dataclass(frozen=True)
+class WorkerIdentity:
+    """The trusted AI worker/model identity, exactly as the process was configured.
+
+    Values are unnormalized and either may be None. Absence is a normal state,
+    not a startup failure: only `hiwaga_model_gate` cares, and it reports it.
+    """
+
+    worker: str | None = None
+    model: str | None = None
+
+
+def load_worker_identity(env: Mapping[str, str] | None = None) -> WorkerIdentity:
+    """Read `HIWAGA_AI_WORKER` / `HIWAGA_AI_MODEL` from the process environment.
+
+    This is the only source of worker identity. Nothing is guessed from the
+    process name, the MCP client, or any other variable.
+    """
+    source = os.environ if env is None else env
+    return WorkerIdentity(worker=source.get(WORKER_ENV_VAR), model=source.get(MODEL_ENV_VAR))
+
+
+__all__ = [
+    "MODEL_ENV_VAR",
+    "REPO_ROOT_ENV_VAR",
+    "WORKER_ENV_VAR",
+    "ServerConfig",
+    "WorkerIdentity",
+    "load_config",
+    "load_worker_identity",
+]

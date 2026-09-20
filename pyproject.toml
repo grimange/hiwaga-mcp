@@ -23,6 +23,9 @@ hiwaga-mcp = "hiwaga_mcp.__main__:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+hiwaga_mcp = ["policy/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

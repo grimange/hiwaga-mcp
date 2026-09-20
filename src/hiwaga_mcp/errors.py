@@ -28,6 +28,7 @@ class ReasonCode(str, Enum):
     PROGRESS_DOCUMENT_INVALID = "HIWAGA_PROGRESS_DOCUMENT_INVALID"
     PROJECT_STATE_UNAVAILABLE = "HIWAGA_PROJECT_STATE_UNAVAILABLE"
     ASSET_AUTHORITY_INVALID = "HIWAGA_ASSET_AUTHORITY_INVALID"
+    WORKER_POLICY_INVALID = "HIWAGA_WORKER_POLICY_INVALID"
 
 
 class HiwagaError(Exception):
@@ -81,6 +82,12 @@ class AssetAuthorityError(HiwagaError):
     code = ReasonCode.ASSET_AUTHORITY_INVALID
 
 
+class WorkerPolicyError(HiwagaError):
+    """The canonical worker policy is missing, malformed, or internally inconsistent."""
+
+    code = ReasonCode.WORKER_POLICY_INVALID
+
+
 __all__ = [
     "AssetAuthorityError",
     "ConfigurationError",
@@ -90,4 +97,5 @@ __all__ = [
     "ReasonCode",
     "RepositoryIdentityError",
     "TargetOutsideRepositoryError",
+    "WorkerPolicyError",
 ]
