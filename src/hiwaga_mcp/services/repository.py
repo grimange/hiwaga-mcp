@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from hiwaga_mcp.errors import ReasonCode, TargetOutsideRepositoryError
+from hiwaga_mcp.errors import ReasonCode, RepositoryIdentityError, TargetOutsideRepositoryError
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.project import (
     RepositoryIdentityReport,
@@ -118,6 +118,23 @@ def validate_repository_identity(repo_root: Path) -> RepositoryIdentityReport:
     )
 
 
+def require_valid_repository(repo_root: Path) -> Path:
+    """Return the canonical root of `repo_root`, or raise if it is not a HIWAGA checkout.
+
+    Raises:
+        RepositoryIdentityError: identity validation failed. Carries
+            `HIWAGA_REPOSITORY_IDENTITY_INVALID` and the report's details.
+    """
+    report = validate_repository_identity(repo_root)
+    if report.status is not RepositoryIdentityStatus.VALID:
+        error = report.error
+        raise RepositoryIdentityError(
+            error.message if error else f"{repo_root} is not a valid HIWAGA checkout.",
+            details=error.details if error else {"repo_root": str(repo_root)},
+        )
+    return Path(report.repo_root)
+
+
 def resolve_within_repository(repo_root: Path, target: str | Path) -> Path:
     """Resolve `target` to an absolute path proven to sit inside `repo_root`.
 
@@ -181,6 +198,7 @@ def resolve_within_repository(repo_root: Path, target: str | Path) -> Path:
 
 __all__ = [
     "REQUIRED_SENTINELS",
+    "require_valid_repository",
     "resolve_within_repository",
     "validate_repository_identity",
 ]

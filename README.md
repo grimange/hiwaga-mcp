@@ -13,8 +13,8 @@ See `AGENTS.md` for the repository engineering contract.
 
 ## Status
 
-This repository contains the **P0 bootstrap foundation** and the first product tool,
-`hiwaga_project_state`. The remaining planned tools are not implemented yet. See
+This repository contains the **P0 bootstrap foundation** and two product tools,
+`hiwaga_project_state` and `hiwaga_authority`. The remaining planned tools are not implemented yet. See
 [Scope](#scope) below for exactly what exists today.
 
 ## Requirements
@@ -95,12 +95,15 @@ ruff check .
   resolvable symlink escape.
 - Stable reason codes: `HIWAGA_CONFIGURATION_INVALID`,
   `HIWAGA_REPOSITORY_IDENTITY_INVALID`, `HIWAGA_TARGET_OUTSIDE_REPOSITORY`,
-  `HIWAGA_PROGRESS_DOCUMENT_INVALID`, `HIWAGA_PROJECT_STATE_UNAVAILABLE`.
+  `HIWAGA_PROGRESS_DOCUMENT_INVALID`, `HIWAGA_PROJECT_STATE_UNAVAILABLE`,
+  `HIWAGA_ASSET_AUTHORITY_INVALID`.
 - Typed vocabularies for later work: `GateDecision`, `VerificationStatus`,
   `ProofClass`.
 - One bootstrap diagnostic tool, `hiwaga_server_info`, with typed structured output.
 - `hiwaga_project_state`: the current deterministic development state of the
   configured HIWAGA repository (see below).
+- `hiwaga_authority`: the asset authority that applies to a repository-relative
+  target, from `art-source/ASSET_AUTHORITY.json` only (see below).
 
 `hiwaga_server_info` reports server name and version, the configured repository
 root, and the identity verdict for that root. It reports **no project state** and
@@ -144,11 +147,57 @@ error (`is_error`) whose text begins with the stable reason code:
 | ledger resolves outside the repository | `HIWAGA_TARGET_OUTSIDE_REPOSITORY` |
 | Git missing, not a repository, or HEAD has no commit | `HIWAGA_PROJECT_STATE_UNAVAILABLE` |
 
+### `hiwaga_authority`
+
+Input: `target`, a repository-relative file or directory path. The repository is
+always the configured `HIWAGA_REPO_ROOT`; the target goes through the same
+containment check as every other path (traversal, external absolute paths, and
+symlink escape are refused). The target does not have to exist.
+
+P0 authority comes **only** from `art-source/ASSET_AUTHORITY.json`. Prose
+documents, READMEs, `docs/CANON.md`, and the progress ledger are not consulted.
+Authority is not a quality or acceptance judgement.
+
+A target is owned by an asset when its canonical path equals, or is beneath, a path
+the asset declares. Only these fields are read as paths: `source_path`,
+`runtime_path`, `motion_proof_path` (repository-relative), and `static_form_source`,
+`rig_proof_source`, `motion_source`, `representative_pose_reference_source`
+(relative to that asset's `source_path`). A declared file owns only itself. There is
+no filename, substring, or fuzzy matching.
+
+| `resolution` | Meaning |
+| --- | --- |
+| `RESOLVED` | exactly one asset owns the target; `asset_id` is its manifest key and its declared fields are returned verbatim (`null` when not declared) |
+| `UNRESOLVED` | no asset owns the target; `asset_id` is null |
+| `CONFLICT` | several assets own the target; none is chosen, `asset_id` is null, and `matched_asset_ids` lists them |
+
+`UNRESOLVED` is not an error, and `CONFLICT` is not an execution error: both are
+ordinary structured results.
+
+`allowed_uses` / `forbidden_uses` are derived from two explicit fields only, and
+are empty when neither applies:
+
+| Manifest field | Allowed | Forbidden |
+| --- | --- | --- |
+| `authoring_reuse: "reference_only"` | `HISTORICAL_REFERENCE`, `TECHNICAL_REFERENCE` | `AUTHORING_DERIVATION` |
+| `creation_mode: "from_scratch"` | — | `DUPLICATE_SUPERSEDED_SOURCE`, `LINK_SUPERSEDED_SOURCE`, `RESHAPE_SUPERSEDED_SOURCE`, `REUSE_SUPERSEDED_TOPOLOGY` |
+
+`status` and other manifest strings are reported as declared, not mapped to an enum.
+`replacement` is reported verbatim only if an asset declares one.
+
+The tool **refuses** with a stable reason code (an MCP tool error whose text starts
+with the code) when configuration or identity is invalid (`HIWAGA_CONFIGURATION_INVALID`,
+`HIWAGA_REPOSITORY_IDENTITY_INVALID`), the target escapes the repository
+(`HIWAGA_TARGET_OUTSIDE_REPOSITORY`), or the manifest is missing, not JSON, has
+duplicate keys, an unsupported `schema_version` (only `1` is supported), a malformed
+entry, or an unusable declared path (`HIWAGA_ASSET_AUTHORITY_INVALID`). The whole
+manifest is validated on every call, so no partial authority is returned from an
+untrustworthy one.
+
 ### Planned P0 tools — not implemented
 
 ```text
 hiwaga_context
-hiwaga_authority
 hiwaga_preflight
 hiwaga_model_gate
 hiwaga_verify
@@ -157,12 +206,13 @@ hiwaga_verify
 ### Deferred — not implemented
 
 Verifier registry and subprocess verifier execution, worker/model policy
-evaluation, CANON routing, asset-authority resolution,
-evidence capture and packaging, Godot and Blender integration, GitHub
+evaluation, CANON routing, prose authority resolution or reconciliation with the
+machine registry, evidence capture and packaging, Godot and Blender integration, GitHub
 integration, semantic search, embeddings, and any HTTP, OAuth, or remote
 transport.
 
-No verification, evidence, or authority capability exists in this repository yet.
+No verification or evidence capability exists in this repository yet, and asset
+authority covers the machine-readable registry only.
 
 ## Runtime scratch state
 
@@ -183,7 +233,8 @@ src/hiwaga_mcp/
     ├── repository.py      identity validation and path containment
     ├── git_state.py       read-only Git branch/HEAD/worktree facts
     ├── progress.py        current-block parser for the progress ledger
-    └── project_state.py   composes identity + ledger + Git into ProjectStateResult
+    ├── project_state.py   composes identity + ledger + Git into ProjectStateResult
+    └── authority.py       asset-authority manifest loading and path-ownership resolution
 ```
 
 MCP tool adapters stay thin; behaviour lives in services and is tested directly.

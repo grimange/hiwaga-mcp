@@ -37,7 +37,7 @@ def test_module_entrypoint_serves_mcp_over_stdio(hiwaga_repo: Path) -> None:
                 assert info.name == "hiwaga-mcp"
 
                 names = {tool.name for tool in (await client.list_tools()).tools}
-                assert names == {"hiwaga_server_info", "hiwaga_project_state"}
+                assert names == {"hiwaga_server_info", "hiwaga_project_state", "hiwaga_authority"}
 
                 result = await client.call_tool("hiwaga_server_info", {})
                 assert result.is_error is False
@@ -91,3 +91,27 @@ def test_stdio_server_serves_project_state(state_repo: Path) -> None:
         anyio.run(body)
     except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
         pytest.fail(f"stdio project-state call did not complete in time: {exc}")
+
+
+def test_stdio_server_serves_authority(authority_repo: Path) -> None:
+    """`hiwaga_authority` works through a real subprocess, including a normal UNRESOLVED result."""
+
+    async def body() -> None:
+        with anyio.fail_after(HANDSHAKE_TIMEOUT_SECONDS):
+            async with Client(_server_parameters(authority_repo)) as client:
+                resolved = await client.call_tool("hiwaga_authority", {"target": "art-source/fresh/a.blend"})
+                assert resolved.is_error is False
+                assert resolved.structured_content["resolution"] == "RESOLVED"
+                assert resolved.structured_content["asset_id"] == "fresh"
+
+                unresolved = await client.call_tool("hiwaga_authority", {"target": "docs/CANON.md"})
+                assert unresolved.is_error is False
+                assert unresolved.structured_content["resolution"] == "UNRESOLVED"
+
+                refused = await client.call_tool("hiwaga_authority", {"target": "../x"})
+                assert refused.is_error is True
+
+    try:
+        anyio.run(body)
+    except TimeoutError as exc:  # pragma: no cover - only on a hung bootstrap
+        pytest.fail(f"stdio authority call did not complete in time: {exc}")

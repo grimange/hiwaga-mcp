@@ -6,9 +6,11 @@ No test reads, writes, or otherwise touches the operator's live HIWAGA checkout.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -86,6 +88,55 @@ def init_git_repo(root: Path) -> str:
     run_git(root, "add", "-A")
     run_git(root, "commit", "-q", "-m", "fixture")
     return run_git(root, "rev-parse", "HEAD")
+
+
+def fixture_manifest() -> dict[str, Any]:
+    """A fresh minimal asset-authority manifest; tests mutate their own copy."""
+    return {
+        "schema_version": 1,
+        "assets": {
+            "old_thing": {
+                "status": "superseded",
+                "visual_authority": False,
+                "runtime_required_temporarily": False,
+                "authoring_reuse": "reference_only",
+                "source_path": "art-source/_superseded/old_thing",
+                "runtime_path": "game/assets/old_thing_proof",
+            },
+            "solo": {
+                "status": "some_future_status",
+                "runtime_path": "game/assets/solo/solo.glb",
+                "source_path": "art-source/solo/solo.blend",
+                "unmodelled_additive_field": "tolerated",
+            },
+            "fresh": {
+                "status": "active_rebuild_target",
+                "creation_mode": "from_scratch",
+                "visual_authority": True,
+                "runtime_active": True,
+                "runtime_required_temporarily": False,
+                "source_path": "art-source/fresh",
+                "static_form_source": "fresh_static.blend",
+                "motion_source": "motion/fresh_motion.blend",
+                "motion_proof_path": "game/proofs/fresh/field.tscn",
+            },
+            "fresh_old": {"source_path": "art-source/fresh_old"},
+        },
+    }
+
+
+def write_manifest(root: Path, manifest: dict[str, Any] | str) -> None:
+    """Replace the fixture repository's asset-authority manifest."""
+    text = manifest if isinstance(manifest, str) else json.dumps(manifest, indent=2)
+    (root / "art-source/ASSET_AUTHORITY.json").write_text(text, encoding="utf-8")
+
+
+@pytest.fixture
+def authority_repo(tmp_path: Path) -> Path:
+    """A valid fixture HIWAGA checkout carrying `fixture_manifest()` (no Git needed)."""
+    root = make_hiwaga_repo(tmp_path / "hiwaga")
+    write_manifest(root, fixture_manifest())
+    return root
 
 
 @pytest.fixture

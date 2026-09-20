@@ -16,9 +16,11 @@ from mcp.server.mcpserver.exceptions import ToolError
 from hiwaga_mcp import SERVER_NAME, SERVER_TITLE, __version__
 from hiwaga_mcp.config import REPO_ROOT_ENV_VAR, ServerConfig, load_config
 from hiwaga_mcp.errors import ConfigurationError, HiwagaError
+from hiwaga_mcp.models.authority import AuthorityResult
 from hiwaga_mcp.models.common import ErrorDetail
 from hiwaga_mcp.models.diagnostics import ConfigurationStatus, ServerInfoResult
 from hiwaga_mcp.models.state import ProjectStateResult
+from hiwaga_mcp.services.authority import resolve_authority
 from hiwaga_mcp.services.project_state import get_project_state
 from hiwaga_mcp.services.repository import validate_repository_identity
 
@@ -115,6 +117,32 @@ def build_server(
             )
         try:
             return get_project_state(config.repo_root)
+        except HiwagaError as exc:
+            raise _refusal(exc) from exc
+
+    @server.tool(
+        name="hiwaga_authority",
+        title="HIWAGA asset authority",
+        description=(
+            "Report the asset authority that applies to a repository-relative target, read only "
+            "from art-source/ASSET_AUTHORITY.json. Returns RESOLVED with the owning asset's "
+            "declared authority fields, UNRESOLVED when no asset owns the target, or CONFLICT "
+            "when several do; the last two are normal results, not errors. The repository is "
+            "always the configured HIWAGA_REPO_ROOT. Refuses with a stable reason code when the "
+            "target escapes the repository or the manifest cannot be trusted."
+        ),
+    )
+    def hiwaga_authority(target: str) -> AuthorityResult:
+        if config is None:
+            raise _refusal(
+                config_error
+                or ConfigurationError(
+                    f"{REPO_ROOT_ENV_VAR} is not configured for this server process.",
+                    details={"env_var": REPO_ROOT_ENV_VAR, "problem": "not_set"},
+                )
+            )
+        try:
+            return resolve_authority(config.repo_root, target)
         except HiwagaError as exc:
             raise _refusal(exc) from exc
 

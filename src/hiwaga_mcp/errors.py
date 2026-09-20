@@ -27,6 +27,7 @@ class ReasonCode(str, Enum):
     TARGET_OUTSIDE_REPOSITORY = "HIWAGA_TARGET_OUTSIDE_REPOSITORY"
     PROGRESS_DOCUMENT_INVALID = "HIWAGA_PROGRESS_DOCUMENT_INVALID"
     PROJECT_STATE_UNAVAILABLE = "HIWAGA_PROJECT_STATE_UNAVAILABLE"
+    ASSET_AUTHORITY_INVALID = "HIWAGA_ASSET_AUTHORITY_INVALID"
 
 
 class HiwagaError(Exception):
@@ -74,7 +75,14 @@ class ProjectStateUnavailableError(HiwagaError):
     code = ReasonCode.PROJECT_STATE_UNAVAILABLE
 
 
+class AssetAuthorityError(HiwagaError):
+    """The asset-authority manifest is missing, malformed, or cannot be trusted."""
+
+    code = ReasonCode.ASSET_AUTHORITY_INVALID
+
+
 __all__ = [
+    "AssetAuthorityError",
     "ConfigurationError",
     "HiwagaError",
     "ProgressDocumentError",
